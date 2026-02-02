@@ -4,6 +4,11 @@ project(QtFtpClient LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Workaround for MinGW GCC internal compiler error with AVX512
+if(MINGW)
+    add_compile_options(-mno-avx512f)
+endif()
+
 # Hitta Qt-moduler
 find_package(Qt6 REQUIRED COMPONENTS Widgets Network)
 

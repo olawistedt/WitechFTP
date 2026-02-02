@@ -3,8 +3,7 @@
 
 #include <QMainWindow>
 #include <QListWidgetItem>
-
-#include <QNetworkReply>
+#include <QAbstractSocket>
 
 QT_BEGIN_NAMESPACE
 class QLineEdit;
@@ -12,46 +11,73 @@ class QPushButton;
 class QTreeView;
 class QFileSystemModel;
 class QSplitter;
-class QNetworkAccessManager;
 class QListWidget;
 class QListWidgetItem;
+class QTcpSocket;
+class QTextStream;
 QT_END_NAMESPACE
 
 class MainWindow : public QMainWindow
 {
-    Q_OBJECT
+  Q_OBJECT
 
 public:
-    MainWindow(QWidget *parent = nullptr);
-    ~MainWindow();
+  MainWindow(QWidget *parent = nullptr);
+  ~MainWindow();
 
 private slots:
-    void connectOrDisconnect();
-    void onFtpReply(QNetworkReply *reply);
-    void processItem(QListWidgetItem *item);
-    void uploadFile();
-    void downloadFile(const QString &fileName);
+  void connectOrDisconnect();
+  void processItem(QListWidgetItem *item);
+  void uploadFile();
+  void downloadFile(const QString &fileName);
+
+  // Control connection slots
+  void onControlConnected();
+  void onControlReadyRead();
+  void onControlDisconnected();
+  void onControlError(QAbstractSocket::SocketError socketError);
+
+  // Data connection slots
+  void onDataReadyRead();
+  void onDataDisconnected();
+  void onDataError(QAbstractSocket::SocketError socketError);
+
 
 private:
-    void createUi();
+  void createUi();
+  void sendCommand(const QString &command);
 
-    // Connection widgets
-    QLineEdit *hostLineEdit;
-    QLineEdit *usernameLineEdit;
-    QLineEdit *passwordLineEdit;
-    QPushButton *connectButton;
+  // Connection widgets
+  QLineEdit *hostLineEdit;
+  QLineEdit *usernameLineEdit;
+  QLineEdit *passwordLineEdit;
+  QPushButton *connectButton;
 
-    // File browsers
-    QSplitter *splitter;
-    QTreeView *localTreeView;
-    QFileSystemModel *localModel;
+  // File browsers
+  QSplitter *splitter;
+  QTreeView *localTreeView;
+  QFileSystemModel *localModel;
 
-    QListWidget *remoteListWidget;
+  QListWidget *remoteListWidget;
 
-    // FTP
-    QNetworkAccessManager *ftp;
-    QString currentPath;
-    QHash<QString, bool> isDirectory;
+  // FTP
+  QTcpSocket *controlSocket;
+  QTcpSocket *dataSocket;
+  QTextStream *controlStream;
+  QByteArray dataBuffer;
+
+  enum class FtpCommand
+  {
+    None,
+    Cwd,
+    List
+  };
+  FtpCommand lastCommand = FtpCommand::None;
+  QString pendingPath;
+
+  QString currentPath;
+  QHash<QString, bool> isDirectory;
+  bool m_isConnected = false;
 };
 
-#endif // MAINWINDOW_H
+#endif  // MAINWINDOW_H
