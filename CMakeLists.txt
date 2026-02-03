@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Workaround for MinGW GCC internal compiler error with AVX512
 if(MINGW)
-    add_compile_options(-mno-avx512f)
+    add_compile_options(-mno-avx512f -fno-ipa-cp -fno-ipa-sra)
 endif()
 
 # Hitta Qt-moduler
