@@ -89,14 +89,14 @@ MainWindow::createUi()
   passwordLineEdit = new QLineEdit;
   passwordLineEdit->setPlaceholderText("Password");
   passwordLineEdit->setEchoMode(QLineEdit::Password);
-  
+
   // Read password from environment variable if it exists
   QString envPassword = QProcessEnvironment::systemEnvironment().value("FTP_PASSWORD", "");
   if (!envPassword.isEmpty())
   {
     passwordLineEdit->setText(envPassword);
   }
-  
+
   connectButton = new QPushButton("Connect");
 
   connectionLayout->addWidget(new QLabel("Host:"));
@@ -150,8 +150,12 @@ MainWindow::connectOrDisconnect()
   if (password.isEmpty())
   {
     bool ok;
-    password = QInputDialog::getText(this, "FTP Password", "Enter FTP password:",
-                                     QLineEdit::Password, "", &ok);
+    password = QInputDialog::getText(this,
+                                     "FTP Password",
+                                     "Enter FTP password:",
+                                     QLineEdit::Password,
+                                     "",
+                                     &ok);
     if (!ok || password.isEmpty())
     {
       return;  // User cancelled or didn't enter password
