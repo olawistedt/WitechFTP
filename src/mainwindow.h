@@ -48,7 +48,10 @@ private slots:
   void onDataDisconnected();
   void onDataError(QAbstractSocket::SocketError socketError);
   void showLocalContextMenu(const QPoint &pos);
+  void showRemoteContextMenu(const QPoint &pos);
   void uploadFolder(const QString &localPath);
+  void localFileDoubleClicked(const QModelIndex &index);
+  void deleteRemoteFileConfirmed(const QString &fileName);
 
 
 private:
@@ -85,7 +88,9 @@ private:
     List,
     Pwd,
     Mkd,
-    Stor
+    Stor,
+    Retr,
+    Dele
   };
   FtpCommand lastCommand = FtpCommand::None;
   QString pendingPath;
@@ -95,15 +100,25 @@ private:
   bool m_isConnected = false;
 
   // Upload feature
-  struct FtpUploadCommand {
-      enum CommandType { CreateDirectory, UploadFile };
-      CommandType type;
-      QString localPath;  // Full path to local file/dir
-      QString remotePath; // Path on server for creation
+  struct FtpUploadCommand
+  {
+    enum CommandType
+    {
+      CreateDirectory,
+      UploadFile
+    };
+    CommandType type;
+    QString localPath;   // Full path to local file/dir
+    QString remotePath;  // Path on server for creation
   };
   QQueue<FtpUploadCommand> m_uploadQueue;
   QFile *m_fileToUpload = nullptr;
   QString m_pendingRemotePathForUpload;
+  QFile *m_fileToDownload = nullptr;
+  QString m_pendingFileNameForDownload;
+  QString m_remoteFileToDelete;
+  QModelIndex m_localFileToDelete;
+  bool m_deleteLocalFile = false;
 };
 
 #endif  // MAINWINDOW_H
