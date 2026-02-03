@@ -281,7 +281,6 @@ MainWindow::onControlReadyRead()
     else if (responseCode == 226)
     {  // Closing data connection.
       qDebug() << "Server has sent the list.";
-      lastCommand = FtpCommand::None;
       // The onDataDisconnected slot will handle the parsing
     }
   }
@@ -376,6 +375,7 @@ MainWindow::onDataDisconnected()
   }
 
   dataBuffer.clear();
+  lastCommand = FtpCommand::None;
 }
 
 void
