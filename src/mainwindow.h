@@ -6,6 +6,7 @@
 #include <QHash>
 #include <QListWidgetItem>
 #include <QMainWindow>
+#include <QQueue>
 #include <QString>
 
 QT_BEGIN_NAMESPACE
@@ -18,6 +19,7 @@ class QListWidget;
 class QListWidgetItem;
 class QTcpSocket;
 class QTextStream;
+class QFile;
 QT_END_NAMESPACE
 
 class MainWindow : public QMainWindow
@@ -45,11 +47,16 @@ private slots:
   void onDataConnected();
   void onDataDisconnected();
   void onDataError(QAbstractSocket::SocketError socketError);
+  void showLocalContextMenu(const QPoint &pos);
+  void uploadFolder(const QString &localPath);
 
 
 private:
   void createUi();
   void sendCommand(const QString &command);
+  void handlePasvResponse(const QString &response);
+  void recursivelyPopulateUploadQueue(const QString &localPath, const QString &remotePath);
+  void processUploadQueue();
 
   // Connection widgets
   QLineEdit *hostLineEdit;
@@ -76,7 +83,9 @@ private:
     None,
     Cwd,
     List,
-    Pwd
+    Pwd,
+    Mkd,
+    Stor
   };
   FtpCommand lastCommand = FtpCommand::None;
   QString pendingPath;
@@ -84,6 +93,17 @@ private:
   QString currentPath;
   QHash<QString, bool> isDirectory;
   bool m_isConnected = false;
+
+  // Upload feature
+  struct FtpUploadCommand {
+      enum CommandType { CreateDirectory, UploadFile };
+      CommandType type;
+      QString localPath;  // Full path to local file/dir
+      QString remotePath; // Path on server for creation
+  };
+  QQueue<FtpUploadCommand> m_uploadQueue;
+  QFile *m_fileToUpload = nullptr;
+  QString m_pendingRemotePathForUpload;
 };
 
 #endif  // MAINWINDOW_H

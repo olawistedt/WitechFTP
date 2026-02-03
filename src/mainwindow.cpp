@@ -4,6 +4,7 @@
 #include <QByteArray>
 #include <QDebug>
 #include <QDir>
+#include <QFileInfo>
 #include <QFileSystemModel>
 #include <QHBoxLayout>
 #include <QInputDialog>
@@ -12,6 +13,7 @@
 #include <QListWidget>
 #include <QListWidgetItem>
 #include <QMainWindow>
+#include <QMenu>
 #include <QMessageBox>
 #include <QProcessEnvironment>
 #include <QPushButton>
@@ -118,6 +120,7 @@ MainWindow::createUi()
   localTreeView->scrollTo(localModel->index(QDir::currentPath()));
   localTreeView->expand(localModel->index(QDir::currentPath()));
   localTreeView->setCurrentIndex(localModel->index(QDir::currentPath()));
+  localTreeView->setContextMenuPolicy(Qt::CustomContextMenu);
 
   // Remote
   remoteListWidget = new QListWidget(splitter);
@@ -136,6 +139,7 @@ MainWindow::createUi()
   // --- Connections ---
   connect(connectButton, &QPushButton::clicked, this, &MainWindow::connectOrDisconnect);
   connect(remoteListWidget, &QListWidget::itemDoubleClicked, this, &MainWindow::processItem);
+  connect(localTreeView, &QTreeView::customContextMenuRequested, this, &MainWindow::showLocalContextMenu);
 }
 
 void
@@ -178,6 +182,38 @@ MainWindow::sendCommand(const QString &command)
   qDebug() << "C:" << command;
   *controlStream << command << "\r\n";
   controlStream->flush();
+}
+
+void MainWindow::handlePasvResponse(const QString &response)
+{
+    // Response is like: 227 Entering Passive Mode (h1,h2,h3,h4,p1,p2).
+    int openParen = response.indexOf('(');
+    int closeParen = response.indexOf(')');
+    if (openParen == -1 || closeParen == -1)
+    {
+      qDebug() << "Could not parse PASV response";
+      return;
+    }
+    QString numbers = response.mid(openParen + 1, closeParen - openParen - 1);
+    QStringList parts = numbers.split(',');
+    if (parts.size() < 6)
+    {
+      qDebug() << "Could not parse PASV response parts";
+      return;
+    }
+
+    QString pasvHost =
+        QString("%1.%2.%3.%4").arg(parts[0]).arg(parts[1]).arg(parts[2]).arg(parts[3]);
+    int pasvPort = (parts[4].toInt() * 256) + parts[5].toInt();
+
+    qDebug() << "Attempting data connection to" << pasvHost << pasvPort;
+    dataBuffer.clear();
+    if (dataSocket->state() != QAbstractSocket::UnconnectedState)
+    {
+      dataSocket->abort();
+    }
+    m_waitingForDataConnection = true;
+    dataSocket->connectToHost(pasvHost, pasvPort);
 }
 
 // --- Control Connection Slots ---
@@ -242,48 +278,51 @@ MainWindow::onControlReadyRead()
       qDebug() << "CWD failed:" << response;
       lastCommand = FtpCommand::None;
     }
+    else if (responseCode == 257 && lastCommand == FtpCommand::Mkd)
+    { // MKD success
+        m_uploadQueue.dequeue();
+        processUploadQueue();
+    }
+    else if (responseCode == 550 && lastCommand == FtpCommand::Mkd)
+    { // MKD failed (maybe dir exists)
+        qDebug() << "MKD failed, assuming directory exists:" << response;
+        m_uploadQueue.dequeue();
+        processUploadQueue();
+    }
     else if (responseCode == 227)
     {  // Entering Passive Mode
-      if (lastCommand != FtpCommand::List)
-        return;
-      // Response is like: 227 Entering Passive Mode (h1,h2,h3,h4,p1,p2).
-      int openParen = response.indexOf('(');
-      int closeParen = response.indexOf(')');
-      if (openParen == -1 || closeParen == -1)
-      {
-        qDebug() << "Could not parse PASV response";
-        return;
-      }
-      QString numbers = response.mid(openParen + 1, closeParen - openParen - 1);
-      QStringList parts = numbers.split(',');
-      if (parts.size() < 6)
-      {
-        qDebug() << "Could not parse PASV response parts";
-        return;
-      }
-
-      QString pasvHost =
-          QString("%1.%2.%3.%4").arg(parts[0]).arg(parts[1]).arg(parts[2]).arg(parts[3]);
-      int pasvPort = (parts[4].toInt() * 256) + parts[5].toInt();
-
-      qDebug() << "Attempting data connection to" << pasvHost << pasvPort;
-      dataBuffer.clear();
-      if (dataSocket->state() != QAbstractSocket::UnconnectedState)
-      {
-        dataSocket->abort();
-      }
-      m_waitingForDataConnection = true;
-      dataSocket->connectToHost(pasvHost, pasvPort);
+      if (lastCommand == FtpCommand::List || lastCommand == FtpCommand::Stor)
+        handlePasvResponse(response);
     }
     else if (responseCode == 150)
     {  // File status okay; about to open data connection.
-      qDebug() << "Server is about to send the list.";
-      // Nothing to do here, we just wait for the data connection to close
+      if (lastCommand == FtpCommand::List)
+        qDebug() << "Server is about to send the list.";
+      else if (lastCommand == FtpCommand::Stor)
+      {
+        qDebug() << "Server is ready to receive file.";
+        QByteArray fileContent = m_fileToUpload->readAll();
+        dataSocket->write(fileContent);
+        dataSocket->disconnectFromHost(); // Signal that we are done writing
+        m_fileToUpload->close();
+        delete m_fileToUpload;
+        m_fileToUpload = nullptr;
+      }
     }
     else if (responseCode == 226)
     {  // Closing data connection.
-      qDebug() << "Server has sent the list.";
-      // The onDataDisconnected slot will handle the parsing
+      if (lastCommand == FtpCommand::List)
+      {
+        qDebug() << "Server has sent the list.";
+        // The onDataDisconnected slot will handle the parsing
+      }
+      else if (lastCommand == FtpCommand::Stor)
+      {
+        qDebug() << "File upload successful.";
+        m_uploadQueue.dequeue();
+        m_pendingRemotePathForUpload.clear();
+        processUploadQueue();
+      }
     }
   }
 }
@@ -324,6 +363,11 @@ MainWindow::onDataConnected()
   {
     m_waitingForDataConnection = false;
     sendCommand("LIST");
+  }
+  else if (m_waitingForDataConnection && lastCommand == FtpCommand::Stor)
+  {
+    m_waitingForDataConnection = false;
+    sendCommand("STOR " + m_pendingRemotePathForUpload);
   }
 }
 
@@ -391,6 +435,121 @@ MainWindow::onDataError(QAbstractSocket::SocketError socketError)
   qDebug() << "Data connection error:" << dataSocket->errorString();
 }
 
+
+void MainWindow::showLocalContextMenu(const QPoint &pos)
+{
+    if (!m_isConnected)
+        return;
+
+    QModelIndex index = localTreeView->indexAt(pos);
+    if (!index.isValid())
+    {
+        return;
+    }
+
+    // Check if it's a directory
+    if (!localModel->isDir(index))
+    {
+        return;
+    }
+
+    QMenu contextMenu(this);
+    QAction *uploadAction = contextMenu.addAction("Upload folder to server");
+
+    QAction *selectedAction = contextMenu.exec(localTreeView->viewport()->mapToGlobal(pos));
+
+    if (selectedAction == uploadAction)
+    {
+        QString localPath = localModel->filePath(index);
+        uploadFolder(localPath);
+    }
+}
+
+void MainWindow::uploadFolder(const QString &localPath)
+{
+    if (!m_uploadQueue.isEmpty())
+    {
+        QMessageBox::warning(this, "Upload in Progress", "An upload is already in progress.");
+        return;
+    }
+
+    QFileInfo fileInfo(localPath);
+    QString remoteDirName = fileInfo.fileName();
+
+    QString remoteTargetPath;
+    if (currentPath.endsWith('/'))
+    {
+        remoteTargetPath = currentPath + remoteDirName;
+    }
+    else
+    {
+        remoteTargetPath = currentPath + "/" + remoteDirName;
+    }
+
+    m_uploadQueue.clear();
+    recursivelyPopulateUploadQueue(localPath, remoteTargetPath);
+    processUploadQueue();
+}
+
+void MainWindow::recursivelyPopulateUploadQueue(const QString &localPath, const QString &remotePath)
+{
+    QDir localDir(localPath);
+    if (!localDir.exists())
+        return;
+
+    // Command to create this directory
+    m_uploadQueue.enqueue({FtpUploadCommand::CreateDirectory, localPath, remotePath});
+
+    // Enqueue files for upload
+    for (const QFileInfo &file : localDir.entryInfoList(QDir::Files))
+    {
+        m_uploadQueue.enqueue({FtpUploadCommand::UploadFile, file.filePath(), remotePath + "/" + file.fileName()});
+    }
+
+    // Recurse into subdirectories
+    for (const QFileInfo &dir : localDir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot))
+    {
+        recursivelyPopulateUploadQueue(dir.filePath(), remotePath + "/" + dir.fileName());
+    }
+}
+
+void MainWindow::processUploadQueue()
+{
+    if (m_uploadQueue.isEmpty())
+    {
+        qDebug() << "Upload queue finished.";
+        // Refresh remote file list
+        lastCommand = FtpCommand::List;
+        sendCommand("PASV");
+        return;
+    }
+
+    FtpUploadCommand command = m_uploadQueue.head(); // Peek at the command
+
+    if (command.type == FtpUploadCommand::CreateDirectory)
+    {
+        lastCommand = FtpCommand::Mkd;
+        sendCommand("MKD " + command.remotePath);
+    }
+    else if (command.type == FtpUploadCommand::UploadFile)
+    {
+        // For STOR, we also need to enter passive mode
+        lastCommand = FtpCommand::Stor;
+        m_fileToUpload = new QFile(command.localPath);
+        if (!m_fileToUpload->open(QIODevice::ReadOnly))
+        {
+            qDebug() << "Could not open local file for reading:" << command.localPath;
+            // Dequeue and try next
+            m_uploadQueue.dequeue();
+            delete m_fileToUpload;
+            m_fileToUpload = nullptr;
+            processUploadQueue(); // process next
+            return;
+        }
+        m_pendingRemotePathForUpload = command.remotePath;
+        sendCommand("PASV");
+    }
+}
 
 // --- Stubbed Functions ---
 
