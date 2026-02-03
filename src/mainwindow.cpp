@@ -112,10 +112,12 @@ MainWindow::createUi()
 
   // Local
   localModel = new QFileSystemModel;
-  localModel->setRootPath(QDir::currentPath());
+  localModel->setRootPath("");
   localTreeView = new QTreeView(splitter);
   localTreeView->setModel(localModel);
-  localTreeView->setRootIndex(localModel->index(QDir::currentPath()));
+  localTreeView->scrollTo(localModel->index(QDir::currentPath()));
+  localTreeView->expand(localModel->index(QDir::currentPath()));
+  localTreeView->setCurrentIndex(localModel->index(QDir::currentPath()));
 
   // Remote
   remoteListWidget = new QListWidget(splitter);
