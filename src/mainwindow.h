@@ -1,9 +1,12 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include <QMainWindow>
-#include <QListWidgetItem>
 #include <QAbstractSocket>
+#include <QByteArray>
+#include <QHash>
+#include <QListWidgetItem>
+#include <QMainWindow>
+#include <QString>
 
 QT_BEGIN_NAMESPACE
 class QLineEdit;
@@ -39,6 +42,7 @@ private slots:
 
   // Data connection slots
   void onDataReadyRead();
+  void onDataConnected();
   void onDataDisconnected();
   void onDataError(QAbstractSocket::SocketError socketError);
 
@@ -65,12 +69,14 @@ private:
   QTcpSocket *dataSocket;
   QTextStream *controlStream;
   QByteArray dataBuffer;
+  bool m_waitingForDataConnection = false;
 
   enum class FtpCommand
   {
     None,
     Cwd,
-    List
+    List,
+    Pwd
   };
   FtpCommand lastCommand = FtpCommand::None;
   QString pendingPath;

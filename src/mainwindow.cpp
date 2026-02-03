@@ -1,9 +1,28 @@
 #include "mainwindow.h"
-#include <QtWidgets>
 
+#include <QAbstractSocket>
+#include <QByteArray>
+#include <QDebug>
+#include <QDir>
+#include <QFileSystemModel>
+#include <QHBoxLayout>
+#include <QInputDialog>
+#include <QLabel>
+#include <QLineEdit>
+#include <QListWidget>
+#include <QListWidgetItem>
+#include <QMainWindow>
+#include <QMessageBox>
+#include <QProcessEnvironment>
+#include <QPushButton>
+#include <QSplitter>
+#include <QStyle>
 #include <QTcpSocket>
 #include <QTextStream>
-#include <QMessageBox>
+#include <QTreeView>
+#include <QUrl>
+#include <QVBoxLayout>
+#include <QWidget>
 
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
@@ -21,6 +40,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
           &MainWindow::onControlError);
 
   connect(dataSocket, &QTcpSocket::readyRead, this, &MainWindow::onDataReadyRead);
+  connect(dataSocket, &QTcpSocket::connected, this, &MainWindow::onDataConnected);
   connect(dataSocket, &QTcpSocket::disconnected, this, &MainWindow::onDataDisconnected);
   connect(dataSocket,
           QOverload<QAbstractSocket::SocketError>::of(&QTcpSocket::errorOccurred),
@@ -35,7 +55,24 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
 MainWindow::~MainWindow()
 {
-  // Destructor will be called, QObject parenting handles deletion of sockets
+  if (controlSocket)
+  {
+    controlSocket->blockSignals(true);
+    controlSocket->disconnect(this);
+    if (controlSocket->state() != QAbstractSocket::UnconnectedState)
+      controlSocket->disconnectFromHost();
+  }
+
+  if (dataSocket)
+  {
+    dataSocket->blockSignals(true);
+    dataSocket->disconnect(this);
+    if (dataSocket->state() != QAbstractSocket::UnconnectedState)
+      dataSocket->disconnectFromHost();
+  }
+
+  delete controlStream;
+  controlStream = nullptr;
 }
 
 void
@@ -52,6 +89,14 @@ MainWindow::createUi()
   passwordLineEdit = new QLineEdit;
   passwordLineEdit->setPlaceholderText("Password");
   passwordLineEdit->setEchoMode(QLineEdit::Password);
+  
+  // Read password from environment variable if it exists
+  QString envPassword = QProcessEnvironment::systemEnvironment().value("FTP_PASSWORD", "");
+  if (!envPassword.isEmpty())
+  {
+    passwordLineEdit->setText(envPassword);
+  }
+  
   connectButton = new QPushButton("Connect");
 
   connectionLayout->addWidget(new QLabel("Host:"));
@@ -100,6 +145,20 @@ MainWindow::connectOrDisconnect()
     return;
   }
 
+  // Check if password field is empty, if so, prompt user
+  QString password = passwordLineEdit->text();
+  if (password.isEmpty())
+  {
+    bool ok;
+    password = QInputDialog::getText(this, "FTP Password", "Enter FTP password:",
+                                     QLineEdit::Password, "", &ok);
+    if (!ok || password.isEmpty())
+    {
+      return;  // User cancelled or didn't enter password
+    }
+    passwordLineEdit->setText(password);
+  }
+
   controlSocket->connectToHost(hostLineEdit->text(), 21);
   connectButton->setText("Connecting...");
   hostLineEdit->setEnabled(false);
@@ -146,8 +205,23 @@ MainWindow::onControlReadyRead()
     {  // Login successful
       m_isConnected = true;
       connectButton->setText("Disconnect");
-      currentPath = "/";  // Set initial path
-      // Now, let's get the directory listing
+      // Ask server for current directory so we can build correct paths
+      lastCommand = FtpCommand::Pwd;
+      sendCommand("PWD");
+    }
+    else if (responseCode == 257 && lastCommand == FtpCommand::Pwd)
+    {  // "PATHNAME" is current directory
+      int firstQuote = response.indexOf('"');
+      int secondQuote = response.indexOf('"', firstQuote + 1);
+      if (firstQuote != -1 && secondQuote != -1 && secondQuote > firstQuote + 1)
+      {
+        currentPath = response.mid(firstQuote + 1, secondQuote - firstQuote - 1);
+      }
+      else
+      {
+        currentPath = "/";
+      }
+
       lastCommand = FtpCommand::List;
       sendCommand("PASV");
     }
@@ -156,6 +230,11 @@ MainWindow::onControlReadyRead()
       currentPath = pendingPath;
       lastCommand = FtpCommand::List;
       sendCommand("PASV");  // Refresh list
+    }
+    else if (responseCode == 550 && lastCommand == FtpCommand::Cwd)
+    {
+      qDebug() << "CWD failed:" << response;
+      lastCommand = FtpCommand::None;
     }
     else if (responseCode == 227)
     {  // Entering Passive Mode
@@ -182,8 +261,13 @@ MainWindow::onControlReadyRead()
       int pasvPort = (parts[4].toInt() * 256) + parts[5].toInt();
 
       qDebug() << "Attempting data connection to" << pasvHost << pasvPort;
+      dataBuffer.clear();
+      if (dataSocket->state() != QAbstractSocket::UnconnectedState)
+      {
+        dataSocket->abort();
+      }
+      m_waitingForDataConnection = true;
       dataSocket->connectToHost(pasvHost, pasvPort);
-      sendCommand("LIST");
     }
     else if (responseCode == 150)
     {  // File status okay; about to open data connection.
@@ -226,6 +310,16 @@ void
 MainWindow::onDataReadyRead()
 {
   dataBuffer.append(dataSocket->readAll());
+}
+
+void
+MainWindow::onDataConnected()
+{
+  if (m_waitingForDataConnection && lastCommand == FtpCommand::List)
+  {
+    m_waitingForDataConnection = false;
+    sendCommand("LIST");
+  }
 }
 
 void
@@ -283,7 +377,11 @@ MainWindow::onDataDisconnected()
 void
 MainWindow::onDataError(QAbstractSocket::SocketError socketError)
 {
-  Q_UNUSED(socketError);
+  if (socketError == QAbstractSocket::RemoteHostClosedError)
+  {
+    // Normal for FTP data connections: server closes after sending data
+    return;
+  }
   qDebug() << "Data connection error:" << dataSocket->errorString();
 }
 
