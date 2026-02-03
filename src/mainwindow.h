@@ -7,6 +7,7 @@
 #include <QListWidgetItem>
 #include <QMainWindow>
 #include <QQueue>
+#include <QStack>
 #include <QString>
 
 QT_BEGIN_NAMESPACE
@@ -52,7 +53,7 @@ private slots:
   void uploadFolder(const QString &localPath);
   void localFileDoubleClicked(const QModelIndex &index);
   void deleteRemoteFileConfirmed(const QString &fileName);
-
+  void deleteRemoteDirectoryConfirmed(const QString &dirName);
 
 private:
   void createUi();
@@ -60,6 +61,7 @@ private:
   void handlePasvResponse(const QString &response);
   void recursivelyPopulateUploadQueue(const QString &localPath, const QString &remotePath);
   void processUploadQueue();
+  void processRemoteDeleteQueue();
 
   // Connection widgets
   QLineEdit *hostLineEdit;
@@ -90,7 +92,9 @@ private:
     Mkd,
     Stor,
     Retr,
-    Dele
+    Dele,
+    Rmd,
+    ListForDelete
   };
   FtpCommand lastCommand = FtpCommand::None;
   QString pendingPath;
@@ -119,6 +123,23 @@ private:
   QString m_remoteFileToDelete;
   QModelIndex m_localFileToDelete;
   bool m_deleteLocalFile = false;
+
+  struct FtpDeleteCommand
+  {
+    enum CommandType
+    {
+      DeleteFile,
+      DeleteDir
+    };
+    CommandType type;
+    QString path;
+  };
+  QQueue<FtpDeleteCommand> m_remoteDeleteQueue;
+  QStack<QString> m_remoteDirsToList;
+  QStack<QString> m_remoteDirsToDelete;
+  bool m_remoteDeleteInProgress = false;
+  QString m_pendingDeleteListPath;
+  QString m_currentDeleteDir;
 };
 
 #endif  // MAINWINDOW_H

@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QFileSystemModel>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
@@ -125,6 +126,8 @@ MainWindow::createUi()
   localTreeView->expand(localModel->index(QDir::currentPath()));
   localTreeView->setCurrentIndex(localModel->index(QDir::currentPath()));
   localTreeView->setContextMenuPolicy(Qt::CustomContextMenu);
+  localTreeView->setColumnWidth(0, 1360);
+  localTreeView->header()->setSectionResizeMode(0, QHeaderView::Stretch);
 
   // Remote
   remoteListWidget = new QListWidget(splitter);
@@ -132,8 +135,8 @@ MainWindow::createUi()
 
   splitter->addWidget(localTreeView);
   splitter->addWidget(remoteListWidget);
-  splitter->setStretchFactor(0, 1);
-  splitter->setStretchFactor(1, 1);
+  splitter->setStretchFactor(0, 3);
+  splitter->setStretchFactor(1, 2);
 
   // --- Main Layout ---
   QWidget *centralWidget = new QWidget;
@@ -333,7 +336,8 @@ MainWindow::onControlReadyRead()
     }
     else if (responseCode == 226)
     {  // Closing data connection.
-      if (lastCommand == FtpCommand::List)
+      if (lastCommand == FtpCommand::List || lastCommand == FtpCommand::Stor ||
+          lastCommand == FtpCommand::Retr || lastCommand == FtpCommand::ListForDelete)
       {
         qDebug() << "Server has sent the list.";
         // The onDataDisconnected slot will handle the parsing
@@ -366,9 +370,31 @@ MainWindow::onControlReadyRead()
       qDebug() << "File deleted successfully.";
       m_remoteFileToDelete.clear();
       lastCommand = FtpCommand::None;
-      // Refresh remote file list
-      lastCommand = FtpCommand::List;
-      sendCommand("PASV");
+      if (m_remoteDeleteInProgress)
+      {
+        processRemoteDeleteQueue();
+      }
+      else
+      {
+        // Refresh remote file list
+        lastCommand = FtpCommand::List;
+        sendCommand("PASV");
+      }
+    }
+    else if (responseCode == 250 && lastCommand == FtpCommand::Rmd)
+    {  // RMD successful
+      qDebug() << "Folder deleted successfully.";
+      lastCommand = FtpCommand::None;
+      if (m_remoteDeleteInProgress)
+      {
+        processRemoteDeleteQueue();
+      }
+      else
+      {
+        // Refresh remote file list
+        lastCommand = FtpCommand::List;
+        sendCommand("PASV");
+      }
     }
     else if (responseCode == 550 && lastCommand == FtpCommand::Dele)
     {  // DELE failed
@@ -376,6 +402,39 @@ MainWindow::onControlReadyRead()
       QMessageBox::critical(this, "Delete Failed", "Failed to delete remote file.");
       m_remoteFileToDelete.clear();
       lastCommand = FtpCommand::None;
+      if (m_remoteDeleteInProgress)
+      {
+        m_remoteDeleteInProgress = false;
+        m_remoteDeleteQueue.clear();
+        m_remoteDirsToList.clear();
+        m_remoteDirsToDelete.clear();
+      }
+    }
+    else if (responseCode == 550 && lastCommand == FtpCommand::Rmd)
+    {  // RMD failed
+      qDebug() << "Delete folder failed:" << response;
+      lastCommand = FtpCommand::None;
+      if (m_remoteDeleteInProgress)
+      {
+        // Directory might not be empty, retry after processing queue
+        // Re-queue the directory to try again later
+        if (!m_remoteDirsToList.isEmpty() || !m_remoteDeleteQueue.isEmpty())
+        {
+          // There are still items to process, put this dir back and try again
+          QString failedDir = m_remoteDirsToDelete.pop();
+          m_remoteDirsToDelete.push(failedDir);  // Put it back on the stack
+          processRemoteDeleteQueue();
+        }
+        else
+        {
+          // All contents should be deleted, try RMD one more time
+          processRemoteDeleteQueue();
+        }
+      }
+      else
+      {
+        QMessageBox::critical(this, "Delete Failed", "Failed to delete remote folder.");
+      }
     }
   }
 }
@@ -406,7 +465,7 @@ MainWindow::onControlError(QAbstractSocket::SocketError socketError)
 void
 MainWindow::onDataReadyRead()
 {
-  if (lastCommand == FtpCommand::List)
+  if (lastCommand == FtpCommand::List || lastCommand == FtpCommand::ListForDelete)
   {
     dataBuffer.append(dataSocket->readAll());
   }
@@ -428,6 +487,11 @@ MainWindow::onDataConnected()
     m_waitingForDataConnection = false;
     sendCommand("LIST");
   }
+  else if (m_waitingForDataConnection && lastCommand == FtpCommand::ListForDelete)
+  {
+    m_waitingForDataConnection = false;
+    sendCommand("LIST " + m_pendingDeleteListPath);
+  }
   else if (m_waitingForDataConnection && lastCommand == FtpCommand::Stor)
   {
     m_waitingForDataConnection = false;
@@ -443,54 +507,95 @@ MainWindow::onDataConnected()
 void
 MainWindow::onDataDisconnected()
 {
-  qDebug() << "Data connection disconnected. Processing list.";
-  if (lastCommand != FtpCommand::List)
+  if (lastCommand == FtpCommand::List)
+  {
+    qDebug() << "Data connection disconnected. Processing list.";
+
+    remoteListWidget->clear();
+    isDirectory.clear();
+
+    // Add ".." to navigate up, unless we are at root
+    if (currentPath != "/")
+    {
+      QListWidgetItem *upItem = new QListWidgetItem("..");
+      upItem->setIcon(style()->standardIcon(QStyle::SP_DirIcon));
+      remoteListWidget->addItem(upItem);
+      isDirectory[".."] = true;
+    }
+
+    QString listing(dataBuffer);
+    QStringList lines = listing.split('\n', Qt::SkipEmptyParts);
+    for (const QString &line : lines)
+    {
+      // This is a very basic UNIX `ls -l` parser, not robust!
+      QString trimmedLine = line.trimmed();
+      QStringList parts = trimmedLine.split(' ', Qt::SkipEmptyParts);
+      if (parts.size() < 9)
+        continue;
+
+      QString name = parts.sliced(8).join(' ');
+      if (name == "." || name == "..")
+        continue;  // Already handled
+
+      bool isDir = parts[0].startsWith('d');
+      isDirectory[name] = isDir;
+
+      QListWidgetItem *item = new QListWidgetItem(name);
+      if (isDir)
+      {
+        item->setIcon(style()->standardIcon(QStyle::SP_DirIcon));
+      }
+      else
+      {
+        item->setIcon(style()->standardIcon(QStyle::SP_FileIcon));
+      }
+      remoteListWidget->addItem(item);
+    }
+
+    dataBuffer.clear();
+    lastCommand = FtpCommand::None;
     return;
-
-
-  remoteListWidget->clear();
-  isDirectory.clear();
-
-  // Add ".." to navigate up, unless we are at root
-  if (currentPath != "/")
-  {
-    QListWidgetItem *upItem = new QListWidgetItem("..");
-    upItem->setIcon(style()->standardIcon(QStyle::SP_DirIcon));
-    remoteListWidget->addItem(upItem);
-    isDirectory[".."] = true;
   }
 
-  QString listing(dataBuffer);
-  QStringList lines = listing.split('\n', Qt::SkipEmptyParts);
-  for (const QString &line : lines)
+  if (lastCommand == FtpCommand::ListForDelete)
   {
-    // This is a very basic UNIX `ls -l` parser, not robust!
-    QString trimmedLine = line.trimmed();
-    QStringList parts = trimmedLine.split(' ', Qt::SkipEmptyParts);
-    if (parts.size() < 9)
-      continue;
+    QString listing(dataBuffer);
+    QStringList lines = listing.split('\n', Qt::SkipEmptyParts);
 
-    QString name = parts.sliced(8).join(' ');
-    if (name == "." || name == "..")
-      continue;  // Already handled
-
-    bool isDir = parts[0].startsWith('d');
-    isDirectory[name] = isDir;
-
-    QListWidgetItem *item = new QListWidgetItem(name);
-    if (isDir)
+    for (const QString &line : lines)
     {
-      item->setIcon(style()->standardIcon(QStyle::SP_DirIcon));
+      QString trimmedLine = line.trimmed();
+      QStringList parts = trimmedLine.split(' ', Qt::SkipEmptyParts);
+      if (parts.size() < 9)
+        continue;
+
+      QString name = parts.sliced(8).join(' ');
+      if (name == "." || name == "..")
+        continue;
+
+      bool isDir = parts[0].startsWith('d');
+
+      QString fullPath;
+      if (m_currentDeleteDir.endsWith('/'))
+        fullPath = m_currentDeleteDir + name;
+      else
+        fullPath = m_currentDeleteDir + "/" + name;
+
+      if (isDir)
+      {
+        m_remoteDirsToList.push(fullPath);
+      }
+      else
+      {
+        m_remoteDeleteQueue.enqueue({ FtpDeleteCommand::DeleteFile, fullPath });
+      }
     }
-    else
-    {
-      item->setIcon(style()->standardIcon(QStyle::SP_FileIcon));
-    }
-    remoteListWidget->addItem(item);
+
+    m_remoteDirsToDelete.push(m_currentDeleteDir);
+    dataBuffer.clear();
+    lastCommand = FtpCommand::None;
+    processRemoteDeleteQueue();
   }
-
-  dataBuffer.clear();
-  lastCommand = FtpCommand::None;
 }
 
 void
@@ -508,9 +613,6 @@ MainWindow::onDataError(QAbstractSocket::SocketError socketError)
 void
 MainWindow::showLocalContextMenu(const QPoint &pos)
 {
-  if (!m_isConnected)
-    return;
-
   QModelIndex index = localTreeView->indexAt(pos);
   if (!index.isValid())
   {
@@ -523,13 +625,44 @@ MainWindow::showLocalContextMenu(const QPoint &pos)
   if (localModel->isDir(index))
   {
     QAction *uploadAction = contextMenu.addAction("Upload folder to server");
+    QAction *deleteFolderAction = contextMenu.addAction("Delete folder");
 
     QAction *selectedAction = contextMenu.exec(localTreeView->viewport()->mapToGlobal(pos));
 
     if (selectedAction == uploadAction)
     {
+      if (!m_isConnected)
+      {
+        QMessageBox::warning(this, "Not Connected", "Connect to the server to upload folders.");
+        return;
+      }
       QString localPath = localModel->filePath(index);
       uploadFolder(localPath);
+    }
+    else if (selectedAction == deleteFolderAction)
+    {
+      QString localPath = localModel->filePath(index);
+      QFileInfo fileInfo(localPath);
+      QString dirName = fileInfo.fileName();
+
+      QMessageBox::StandardButton reply =
+          QMessageBox::question(this,
+                                "Delete Folder",
+                                QString("Are you sure you want to delete '%1'?").arg(dirName),
+                                QMessageBox::Yes | QMessageBox::No);
+
+      if (reply == QMessageBox::Yes)
+      {
+        QDir dir(localPath);
+        if (dir.removeRecursively())
+        {
+          qDebug() << "Folder deleted:" << localPath;
+        }
+        else
+        {
+          QMessageBox::critical(this, "Error", QString("Could not delete folder: %1").arg(dirName));
+        }
+      }
     }
   }
   else
@@ -609,6 +742,26 @@ MainWindow::showRemoteContextMenu(const QPoint &pos)
       }
     }
   }
+  else
+  {
+    QAction *deleteFolderAction = contextMenu.addAction("Delete folder");
+
+    QAction *selectedAction = contextMenu.exec(remoteListWidget->viewport()->mapToGlobal(pos));
+
+    if (selectedAction == deleteFolderAction)
+    {
+      QMessageBox::StandardButton reply =
+          QMessageBox::question(this,
+                                "Delete Folder",
+                                QString("Are you sure you want to delete '%1'?").arg(itemName),
+                                QMessageBox::Yes | QMessageBox::No);
+
+      if (reply == QMessageBox::Yes)
+      {
+        deleteRemoteDirectoryConfirmed(itemName);
+      }
+    }
+  }
 }
 
 void
@@ -630,6 +783,78 @@ MainWindow::deleteRemoteFileConfirmed(const QString &fileName)
   // Send DELE command
   lastCommand = FtpCommand::Dele;
   sendCommand("DELE " + remoteFilePath);
+}
+
+void
+MainWindow::deleteRemoteDirectoryConfirmed(const QString &dirName)
+{
+  if (!m_isConnected)
+    return;
+
+  QString remoteDirPath;
+  if (currentPath.endsWith('/'))
+  {
+    remoteDirPath = currentPath + dirName;
+  }
+  else
+  {
+    remoteDirPath = currentPath + "/" + dirName;
+  }
+
+  m_remoteDeleteInProgress = true;
+  m_remoteDeleteQueue.clear();
+  m_remoteDirsToList.clear();
+  m_remoteDirsToDelete.clear();
+
+  m_remoteDirsToList.push(remoteDirPath);
+  processRemoteDeleteQueue();
+}
+
+void
+MainWindow::processRemoteDeleteQueue()
+{
+  if (!m_remoteDeleteInProgress)
+    return;
+
+  if (!m_remoteDeleteQueue.isEmpty())
+  {
+    FtpDeleteCommand cmd = m_remoteDeleteQueue.dequeue();
+    if (cmd.type == FtpDeleteCommand::DeleteFile)
+    {
+      lastCommand = FtpCommand::Dele;
+      sendCommand("DELE " + cmd.path);
+      return;
+    }
+    if (cmd.type == FtpDeleteCommand::DeleteDir)
+    {
+      lastCommand = FtpCommand::Rmd;
+      sendCommand("RMD " + cmd.path);
+      return;
+    }
+  }
+
+  if (!m_remoteDirsToList.isEmpty())
+  {
+    m_currentDeleteDir = m_remoteDirsToList.pop();
+    m_pendingDeleteListPath = m_currentDeleteDir;
+    lastCommand = FtpCommand::ListForDelete;
+    sendCommand("PASV");
+    return;
+  }
+
+  if (!m_remoteDirsToDelete.isEmpty())
+  {
+    QString dirPath = m_remoteDirsToDelete.pop();
+    lastCommand = FtpCommand::Rmd;
+    sendCommand("RMD " + dirPath);
+    return;
+  }
+
+  m_remoteDeleteInProgress = false;
+  m_currentDeleteDir.clear();
+  m_pendingDeleteListPath.clear();
+  lastCommand = FtpCommand::List;
+  sendCommand("PASV");
 }
 
 void
