@@ -22,6 +22,7 @@ add_executable(QtFtpClient
     src/main.cpp
     src/mainwindow.cpp
     src/mainwindow.h
+    src/resources.qrc
 )
 
 # Länka mot Qt-moduler

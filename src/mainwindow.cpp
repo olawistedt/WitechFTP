@@ -8,6 +8,7 @@
 #include <QFileSystemModel>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QIcon>
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
@@ -54,6 +55,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   createUi();
 
   setWindowTitle("Qt FTP Client");
+  setWindowIcon(QIcon(":/ftp-icon.png"));
   showMaximized();
 
   // Auto-connect on startup
