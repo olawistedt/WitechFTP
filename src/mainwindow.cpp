@@ -22,6 +22,7 @@
 #include <QStyle>
 #include <QTcpSocket>
 #include <QTextStream>
+#include <QTimer>
 #include <QTreeView>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -53,7 +54,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   createUi();
 
   setWindowTitle("Qt FTP Client");
-  resize(800, 600);
+  showMaximized();
+
+  // Auto-connect on startup
+  QTimer::singleShot(100, this, &MainWindow::connectOrDisconnect);
 }
 
 MainWindow::~MainWindow()
@@ -339,17 +343,10 @@ MainWindow::onControlReadyRead()
       if (lastCommand == FtpCommand::List || lastCommand == FtpCommand::Stor ||
           lastCommand == FtpCommand::Retr || lastCommand == FtpCommand::ListForDelete)
       {
-        qDebug() << "Server has sent the list.";
+        qDebug() << "Server has closed data connection.";
         // The onDataDisconnected slot will handle the parsing
       }
-      else if (lastCommand == FtpCommand::Stor)
-      {
-        qDebug() << "File upload successful.";
-        m_uploadQueue.dequeue();
-        m_pendingRemotePathForUpload.clear();
-        processUploadQueue();
-      }
-      else if (lastCommand == FtpCommand::Retr)
+      if (lastCommand == FtpCommand::Retr)
       {
         qDebug() << "File download successful.";
         if (m_fileToDownload)
@@ -554,6 +551,30 @@ MainWindow::onDataDisconnected()
 
     dataBuffer.clear();
     lastCommand = FtpCommand::None;
+    return;
+  }
+
+  if (lastCommand == FtpCommand::Stor)
+  {
+    qDebug() << "File upload complete. Dequeuing and refreshing list.";
+    m_uploadQueue.dequeue();
+    m_pendingRemotePathForUpload.clear();
+
+    dataBuffer.clear();
+    lastCommand = FtpCommand::None;
+
+    // Process next upload or refresh the list
+    if (m_uploadQueue.isEmpty())
+    {
+      // All uploads done, refresh the remote file list
+      lastCommand = FtpCommand::List;
+      sendCommand("PASV");
+    }
+    else
+    {
+      // Process next upload
+      processUploadQueue();
+    }
     return;
   }
 
