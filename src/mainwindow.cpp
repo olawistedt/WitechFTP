@@ -56,7 +56,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
   createUi();
 
-  setWindowTitle("Qt FTP Client");
+  setWindowTitle("Witech FTP Client");
   setWindowIcon(QIcon(":/ftp-icon.png"));
 
   resize(800, 800);
