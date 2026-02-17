@@ -124,13 +124,15 @@ MainWindow::createUi()
   splitter->setOrientation(Qt::Horizontal);
 
   // Local
+  QString localStartPath =
+      QProcessEnvironment::systemEnvironment().value("USERPROFILE", QDir::homePath());
   localModel = new QFileSystemModel;
-  localModel->setRootPath("");
+  localModel->setRootPath(localStartPath);
   localTreeView = new QTreeView(splitter);
   localTreeView->setModel(localModel);
-  localTreeView->scrollTo(localModel->index(QDir::currentPath()));
-  localTreeView->expand(localModel->index(QDir::currentPath()));
-  localTreeView->setCurrentIndex(localModel->index(QDir::currentPath()));
+  localTreeView->scrollTo(localModel->index(localStartPath));
+  localTreeView->expand(localModel->index(localStartPath));
+  localTreeView->setCurrentIndex(localModel->index(localStartPath));
   localTreeView->setContextMenuPolicy(Qt::CustomContextMenu);
   localTreeView->setColumnWidth(0, 1360);
   localTreeView->header()->setSectionResizeMode(0, QHeaderView::Stretch);
