@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFileSystemModel>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QIcon>
@@ -19,6 +20,7 @@
 #include <QMessageBox>
 #include <QProcessEnvironment>
 #include <QPushButton>
+#include <QScreen>
 #include <QSplitter>
 #include <QStyle>
 #include <QTcpSocket>
@@ -56,7 +58,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
   setWindowTitle("Qt FTP Client");
   setWindowIcon(QIcon(":/ftp-icon.png"));
-//  showMaximized();
+
+  resize(800, 800);
+  setGeometry(QStyle::alignedRect(Qt::LeftToRight,
+                                  Qt::AlignCenter,
+                                  size(),
+                                  QGuiApplication::primaryScreen()->availableGeometry()));
 
   // Auto-connect on startup
   QTimer::singleShot(100, this, &MainWindow::connectOrDisconnect);
