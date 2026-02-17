@@ -4,6 +4,7 @@
 #include <QByteArray>
 #include <QDebug>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QFileSystemModel>
 #include <QGuiApplication>
@@ -56,7 +57,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
   createUi();
 
-  setWindowTitle("Witech FTP Client");
+  setWindowTitle("Witech FTP");
   setWindowIcon(QIcon(":/ftp-icon.png"));
 
   resize(800, 800);
@@ -71,6 +72,24 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
 MainWindow::~MainWindow()
 {
+  if (localTreeView && localModel)
+  {
+    QModelIndex rootIndex = localTreeView->rootIndex();
+    QString lastPath = rootIndex.isValid() ? localModel->filePath(rootIndex) : QString();
+
+    if (!lastPath.isEmpty())
+    {
+      QString configDir = QDir::homePath() + "/.witech_ftp";
+      QDir().mkpath(configDir);
+      QFile file(configDir + "/last_local_path");
+      if (file.open(QIODevice::WriteOnly | QIODevice::Text))
+      {
+        QTextStream out(&file);
+        out << lastPath;
+      }
+    }
+  }
+
   if (controlSocket)
   {
     controlSocket->blockSignals(true);
@@ -131,8 +150,19 @@ MainWindow::createUi()
   splitter->setOrientation(Qt::Horizontal);
 
   // Local
-  QString localStartPath =
-      QProcessEnvironment::systemEnvironment().value("USERPROFILE", QDir::homePath());
+  QString localStartPath;
+  QString configDir = QDir::homePath() + "/.witech_ftp";
+  QFile file(configDir + "/last_local_path");
+  if (file.open(QIODevice::ReadOnly | QIODevice::Text))
+  {
+    localStartPath = QTextStream(&file).readAll().trimmed();
+  }
+  if (localStartPath.isEmpty() || !QDir(localStartPath).exists())
+  {
+    localStartPath =
+        QProcessEnvironment::systemEnvironment().value("USERPROFILE", QDir::homePath());
+  }
+
   localModel = new QFileSystemModel;
   localModel->setRootPath(localStartPath);
 
