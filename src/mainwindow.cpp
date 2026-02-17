@@ -56,7 +56,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
   setWindowTitle("Qt FTP Client");
   setWindowIcon(QIcon(":/ftp-icon.png"));
-  showMaximized();
+//  showMaximized();
 
   // Auto-connect on startup
   QTimer::singleShot(100, this, &MainWindow::connectOrDisconnect);
@@ -128,20 +128,39 @@ MainWindow::createUi()
       QProcessEnvironment::systemEnvironment().value("USERPROFILE", QDir::homePath());
   localModel = new QFileSystemModel;
   localModel->setRootPath(localStartPath);
-  localTreeView = new QTreeView(splitter);
+
+  QWidget *localWidget = new QWidget(splitter);
+  QVBoxLayout *localLayout = new QVBoxLayout(localWidget);
+  localLayout->setContentsMargins(0, 0, 0, 0);
+
+  QPushButton *upButton = new QPushButton("Up", localWidget);
+  upButton->setIcon(style()->standardIcon(QStyle::SP_FileDialogToParent));
+  connect(upButton,
+          &QPushButton::clicked,
+          this,
+          [this]()
+          {
+            QModelIndex current = localTreeView->rootIndex();
+            if (current.isValid())
+              localTreeView->setRootIndex(current.parent());
+          });
+  localLayout->addWidget(upButton);
+
+  localTreeView = new QTreeView(localWidget);
   localTreeView->setModel(localModel);
-  localTreeView->scrollTo(localModel->index(localStartPath));
-  localTreeView->expand(localModel->index(localStartPath));
-  localTreeView->setCurrentIndex(localModel->index(localStartPath));
+  localTreeView->setRootIndex(localModel->index(localStartPath));
   localTreeView->setContextMenuPolicy(Qt::CustomContextMenu);
   localTreeView->setColumnWidth(0, 1360);
   localTreeView->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+  localLayout->addWidget(localTreeView);
 
   // Remote
   remoteListWidget = new QListWidget(splitter);
   remoteListWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+  remoteListWidget->setSpacing(0);
+  remoteListWidget->setIconSize(QSize(16, 16));
 
-  splitter->addWidget(localTreeView);
+  splitter->addWidget(localWidget);
   splitter->addWidget(remoteListWidget);
   splitter->setStretchFactor(0, 3);
   splitter->setStretchFactor(1, 2);
@@ -989,6 +1008,7 @@ MainWindow::localFileDoubleClicked(const QModelIndex &index)
   {
     // If it's a directory, maybe we want to navigate into it locally
     // or offer to upload the whole directory. For now, do nothing.
+    localTreeView->setRootIndex(index);
     return;
   }
 
