@@ -7,7 +7,6 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QFileSystemModel>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -28,7 +27,6 @@
 #include <QTcpSocket>
 #include <QTextStream>
 #include <QTimer>
-#include <QTreeView>
 #include <QTextEdit>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -82,21 +80,15 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
 MainWindow::~MainWindow()
 {
-  if (localTreeView && localModel)
+  if (!m_localCurrentPath.isEmpty())
   {
-    QModelIndex rootIndex = localTreeView->rootIndex();
-    QString lastPath = rootIndex.isValid() ? localModel->filePath(rootIndex) : QString();
-
-    if (!lastPath.isEmpty())
+    QString configDir = QDir::homePath() + "/.witech_ftp";
+    QDir().mkpath(configDir);
+    QFile file(configDir + "/last_local_path");
+    if (file.open(QIODevice::WriteOnly | QIODevice::Text))
     {
-      QString configDir = QDir::homePath() + "/.witech_ftp";
-      QDir().mkpath(configDir);
-      QFile file(configDir + "/last_local_path");
-      if (file.open(QIODevice::WriteOnly | QIODevice::Text))
-      {
-        QTextStream out(&file);
-        out << lastPath;
-      }
+      QTextStream out(&file);
+      out << m_localCurrentPath;
     }
   }
 
@@ -173,33 +165,15 @@ MainWindow::createUi()
         QProcessEnvironment::systemEnvironment().value("USERPROFILE", QDir::homePath());
   }
 
-  localModel = new QFileSystemModel;
-  localModel->setRootPath(localStartPath);
-
   QWidget *localWidget = new QWidget(splitter);
   QVBoxLayout *localLayout = new QVBoxLayout(localWidget);
   localLayout->setContentsMargins(0, 0, 0, 0);
 
-  QPushButton *upButton = new QPushButton("Up", localWidget);
-  upButton->setIcon(style()->standardIcon(QStyle::SP_FileDialogToParent));
-  connect(upButton,
-          &QPushButton::clicked,
-          this,
-          [this]()
-          {
-            QModelIndex current = localTreeView->rootIndex();
-            if (current.isValid())
-              localTreeView->setRootIndex(current.parent());
-          });
-  localLayout->addWidget(upButton);
-
-  localTreeView = new QTreeView(localWidget);
-  localTreeView->setModel(localModel);
-  localTreeView->setRootIndex(localModel->index(localStartPath));
-  localTreeView->setContextMenuPolicy(Qt::CustomContextMenu);
-  localTreeView->setColumnWidth(0, 1360);
-  localTreeView->header()->setSectionResizeMode(0, QHeaderView::Stretch);
-  localLayout->addWidget(localTreeView);
+  localListWidget = new QListWidget(localWidget);
+  localListWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+  localListWidget->setSpacing(0);
+  localListWidget->setIconSize(QSize(16, 16));
+  localLayout->addWidget(localListWidget);
 
   // Remote
   remoteListWidget = new QListWidget(splitter);
@@ -239,15 +213,54 @@ MainWindow::createUi()
   // --- Connections ---
   connect(connectButton, &QPushButton::clicked, this, &MainWindow::connectOrDisconnect);
   connect(remoteListWidget, &QListWidget::itemDoubleClicked, this, &MainWindow::processItem);
-  connect(localTreeView,
-          &QTreeView::customContextMenuRequested,
+  connect(localListWidget,
+          &QListWidget::customContextMenuRequested,
           this,
           &MainWindow::showLocalContextMenu);
   connect(remoteListWidget,
           &QListWidget::customContextMenuRequested,
           this,
           &MainWindow::showRemoteContextMenu);
-  connect(localTreeView, &QTreeView::doubleClicked, this, &MainWindow::localFileDoubleClicked);
+  connect(localListWidget, &QListWidget::itemDoubleClicked, this, &MainWindow::localItemDoubleClicked);
+
+  populateLocalList(localStartPath);
+}
+
+void
+MainWindow::populateLocalList(const QString &path)
+{
+  m_localCurrentPath = path;
+  localListWidget->clear();
+
+  QDir dir(path);
+
+  // Add ".." unless already at filesystem root
+  QDir parent = dir;
+  if (parent.cdUp())
+  {
+    QListWidgetItem *upItem = new QListWidgetItem("..");
+    upItem->setData(Qt::UserRole, QString(".."));
+    upItem->setIcon(style()->standardIcon(QStyle::SP_DirIcon));
+    localListWidget->addItem(upItem);
+  }
+
+  // Directories first
+  for (const QFileInfo &info : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name))
+  {
+    QListWidgetItem *item = new QListWidgetItem(info.fileName());
+    item->setData(Qt::UserRole, info.absoluteFilePath());
+    item->setIcon(style()->standardIcon(QStyle::SP_DirIcon));
+    localListWidget->addItem(item);
+  }
+
+  // Then files
+  for (const QFileInfo &info : dir.entryInfoList(QDir::Files, QDir::Name))
+  {
+    QListWidgetItem *item = new QListWidgetItem(info.fileName());
+    item->setData(Qt::UserRole, info.absoluteFilePath());
+    item->setIcon(style()->standardIcon(QStyle::SP_FileIcon));
+    localListWidget->addItem(item);
+  }
 }
 
 void
@@ -800,21 +813,23 @@ MainWindow::onDataError(QAbstractSocket::SocketError socketError)
 void
 MainWindow::showLocalContextMenu(const QPoint &pos)
 {
-  QModelIndex index = localTreeView->indexAt(pos);
-  if (!index.isValid())
-  {
+  QListWidgetItem *item = localListWidget->itemAt(pos);
+  if (!item)
     return;
-  }
+
+  QString itemPath = item->data(Qt::UserRole).toString();
+  if (itemPath == "..")
+    return;
 
   QMenu contextMenu(this);
+  QFileInfo info(itemPath);
 
-  // Check if it's a directory
-  if (localModel->isDir(index))
+  if (info.isDir())
   {
     QAction *uploadAction = contextMenu.addAction("Upload folder to server");
     QAction *deleteFolderAction = contextMenu.addAction("Delete folder");
 
-    QAction *selectedAction = contextMenu.exec(localTreeView->viewport()->mapToGlobal(pos));
+    QAction *selectedAction = contextMenu.exec(localListWidget->viewport()->mapToGlobal(pos));
 
     if (selectedAction == uploadAction)
     {
@@ -823,67 +838,44 @@ MainWindow::showLocalContextMenu(const QPoint &pos)
         QMessageBox::warning(this, "Not Connected", "Connect to the server to upload folders.");
         return;
       }
-      QString localPath = localModel->filePath(index);
-      uploadFolder(localPath);
+      uploadFolder(itemPath);
     }
     else if (selectedAction == deleteFolderAction)
     {
-      QString localPath = localModel->filePath(index);
-      QFileInfo fileInfo(localPath);
-      QString dirName = fileInfo.fileName();
-
       QMessageBox::StandardButton reply =
           QMessageBox::question(this,
                                 "Delete Folder",
-                                QString("Are you sure you want to delete '%1'?").arg(dirName),
+                                QString("Are you sure you want to delete '%1'?").arg(info.fileName()),
                                 QMessageBox::Yes | QMessageBox::No);
-
       if (reply == QMessageBox::Yes)
       {
-        QDir dir(localPath);
-        if (dir.removeRecursively())
-        {
-          qDebug() << "Folder deleted:" << localPath;
-        }
+        QDir dir(itemPath);
+        if (!dir.removeRecursively())
+          QMessageBox::critical(this, "Error", QString("Could not delete folder: %1").arg(info.fileName()));
         else
-        {
-          QMessageBox::critical(this, "Error", QString("Could not delete folder: %1").arg(dirName));
-        }
+          populateLocalList(m_localCurrentPath);
       }
     }
   }
   else
   {
-    // It's a file - add delete option
     QAction *deleteAction = contextMenu.addAction("Delete");
 
-    QAction *selectedAction = contextMenu.exec(localTreeView->viewport()->mapToGlobal(pos));
+    QAction *selectedAction = contextMenu.exec(localListWidget->viewport()->mapToGlobal(pos));
 
     if (selectedAction == deleteAction)
     {
-      m_localFileToDelete = index;
-      QFileInfo fileInfo(localModel->filePath(index));
-      QString fileName = fileInfo.fileName();
-
       QMessageBox::StandardButton reply =
           QMessageBox::question(this,
                                 "Delete File",
-                                QString("Are you sure you want to delete '%1'?").arg(fileName),
+                                QString("Are you sure you want to delete '%1'?").arg(info.fileName()),
                                 QMessageBox::Yes | QMessageBox::No);
-
       if (reply == QMessageBox::Yes)
       {
-        QString filePath = localModel->filePath(index);
-        if (QFile::remove(filePath))
-        {
-          qDebug() << "File deleted:" << filePath;
-          // File deletion doesn't require refreshing the tree view in most cases,
-          // but Qt's file system model should handle it automatically
-        }
+        if (!QFile::remove(itemPath))
+          QMessageBox::critical(this, "Error", QString("Could not delete file: %1").arg(info.fileName()));
         else
-        {
-          QMessageBox::critical(this, "Error", QString("Could not delete file: %1").arg(fileName));
-        }
+          populateLocalList(m_localCurrentPath);
       }
     }
   }
@@ -1144,8 +1136,27 @@ MainWindow::processUploadQueue()
 }
 
 void
-MainWindow::localFileDoubleClicked(const QModelIndex &index)
+MainWindow::localItemDoubleClicked(QListWidgetItem *item)
 {
+  QString itemPath = item->data(Qt::UserRole).toString();
+
+  // Navigate up
+  if (itemPath == "..")
+  {
+    QDir dir(m_localCurrentPath);
+    if (dir.cdUp())
+      populateLocalList(dir.absolutePath());
+    return;
+  }
+
+  QFileInfo info(itemPath);
+  if (info.isDir())
+  {
+    populateLocalList(itemPath);
+    return;
+  }
+
+  // It's a file — upload it
   if (!m_isConnected)
     return;
 
@@ -1155,30 +1166,15 @@ MainWindow::localFileDoubleClicked(const QModelIndex &index)
     return;
   }
 
-  QString localPath = localModel->filePath(index);
-  if (localModel->isDir(index))
-  {
-    // If it's a directory, maybe we want to navigate into it locally
-    // or offer to upload the whole directory. For now, do nothing.
-    localTreeView->setRootIndex(index);
-    return;
-  }
-
-  QFileInfo fileInfo(localPath);
-  QString fileName = fileInfo.fileName();
-
+  QString fileName = info.fileName();
   QString remoteTargetPath;
   if (currentPath.endsWith('/'))
-  {
     remoteTargetPath = currentPath + fileName;
-  }
   else
-  {
     remoteTargetPath = currentPath + "/" + fileName;
-  }
 
   m_uploadQueue.clear();
-  m_uploadQueue.enqueue({ FtpUploadCommand::UploadFile, localPath, remoteTargetPath });
+  m_uploadQueue.enqueue({ FtpUploadCommand::UploadFile, itemPath, remoteTargetPath });
   processUploadQueue();
 }
 
@@ -1231,20 +1227,7 @@ MainWindow::downloadFile(const QString &fileName)
     return;
 
   // Get the local directory where we'll save the file
-  QString localDir = localModel->filePath(localTreeView->currentIndex());
-  if (localModel->isDir(localTreeView->currentIndex()))
-  {
-    // If a file is selected, use its directory; if a directory is selected, use it
-    if (!localModel->isDir(localTreeView->currentIndex()))
-    {
-      QFileInfo fileInfo(localDir);
-      localDir = fileInfo.absolutePath();
-    }
-  }
-  else
-  {
-    localDir = QDir::currentPath();
-  }
+  QString localDir = m_localCurrentPath.isEmpty() ? QDir::currentPath() : m_localCurrentPath;
 
   QString localFilePath = localDir + "/" + fileName;
   logStatus(QString("Laddar ner: %1 → %2").arg(fileName, localFilePath));

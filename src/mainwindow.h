@@ -13,8 +13,6 @@
 QT_BEGIN_NAMESPACE
 class QLineEdit;
 class QPushButton;
-class QTreeView;
-class QFileSystemModel;
 class QSplitter;
 class QListWidget;
 class QListWidgetItem;
@@ -52,7 +50,7 @@ private slots:
   void showLocalContextMenu(const QPoint &pos);
   void showRemoteContextMenu(const QPoint &pos);
   void uploadFolder(const QString &localPath);
-  void localFileDoubleClicked(const QModelIndex &index);
+  void localItemDoubleClicked(QListWidgetItem *item);
   void deleteRemoteFileConfirmed(const QString &fileName);
   void deleteRemoteDirectoryConfirmed(const QString &dirName);
 
@@ -61,6 +59,7 @@ private:
   void logStatus(const QString &message);
   void sendCommand(const QString &command);
   void handlePasvResponse(const QString &response);
+  void populateLocalList(const QString &path);
   void recursivelyPopulateUploadQueue(const QString &localPath, const QString &remotePath);
   void processUploadQueue();
   void processRemoteDeleteQueue();
@@ -73,8 +72,8 @@ private:
 
   // File browsers
   QSplitter *splitter;
-  QTreeView *localTreeView;
-  QFileSystemModel *localModel;
+  QListWidget *localListWidget;
+  QString m_localCurrentPath;
 
   QListWidget *remoteListWidget;
 
@@ -130,7 +129,6 @@ private:
   QFile *m_fileToDownload = nullptr;
   QString m_pendingFileNameForDownload;
   QString m_remoteFileToDelete;
-  QModelIndex m_localFileToDelete;
   bool m_deleteLocalFile = false;
 
   struct FtpDeleteCommand
