@@ -22,6 +22,7 @@
 #include <QProcessEnvironment>
 #include <QPushButton>
 #include <QScreen>
+#include <QSettings>
 #include <QSplitter>
 #include <QStyle>
 #include <QTcpSocket>
@@ -68,11 +69,20 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   setWindowTitle("Witech FTP");
   setWindowIcon(QIcon(":/ftp-icon.png"));
 
-  resize(800, 800);
-  setGeometry(QStyle::alignedRect(Qt::LeftToRight,
-                                  Qt::AlignCenter,
-                                  size(),
-                                  QGuiApplication::primaryScreen()->availableGeometry()));
+  QSettings settings("Witech", "WitechFTP");
+  QByteArray savedGeometry = settings.value("windowGeometry").toByteArray();
+  if (!savedGeometry.isEmpty())
+  {
+    restoreGeometry(savedGeometry);
+  }
+  else
+  {
+    resize(800, 800);
+    setGeometry(QStyle::alignedRect(Qt::LeftToRight,
+                                    Qt::AlignCenter,
+                                    size(),
+                                    QGuiApplication::primaryScreen()->availableGeometry()));
+  }
 
   // Auto-connect on startup
   QTimer::singleShot(100, this, &MainWindow::connectOrDisconnect);
@@ -80,6 +90,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
 MainWindow::~MainWindow()
 {
+  QSettings settings("Witech", "WitechFTP");
+  settings.setValue("windowGeometry", saveGeometry());
+
   if (!m_localCurrentPath.isEmpty())
   {
     QString configDir = QDir::homePath() + "/.witech_ftp";
