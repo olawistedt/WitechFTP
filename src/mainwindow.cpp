@@ -41,6 +41,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   controlStream = new QTextStream(controlSocket);
   dataSocket = new QTcpSocket(this);
 
+  m_keepAliveTimer = new QTimer(this);
+  m_keepAliveTimer->setInterval(60000);  // 60 seconds
+  connect(m_keepAliveTimer, &QTimer::timeout, this, [this]()
+  {
+    if (m_isConnected && lastCommand == FtpCommand::None)
+      sendCommand("NOOP");
+  });
+
   connect(controlSocket, &QTcpSocket::connected, this, &MainWindow::onControlConnected);
   connect(controlSocket, &QTcpSocket::readyRead, this, &MainWindow::onControlReadyRead);
   connect(controlSocket, &QTcpSocket::disconnected, this, &MainWindow::onControlDisconnected);
@@ -207,9 +215,16 @@ MainWindow::createUi()
   // --- Status Log ---
   statusLog = new QTextEdit;
   statusLog->setReadOnly(true);
-  statusLog->setMaximumHeight(240);
+  statusLog->setMinimumHeight(40);
   statusLog->setFont(QFont("Courier New", 8));
   statusLog->setPlaceholderText("Status log...");
+
+  // --- Vertical splitter: file browsers on top, status log on bottom ---
+  QSplitter *verticalSplitter = new QSplitter(Qt::Vertical);
+  verticalSplitter->addWidget(splitter);
+  verticalSplitter->addWidget(statusLog);
+  verticalSplitter->setStretchFactor(0, 3);
+  verticalSplitter->setStretchFactor(1, 1);
 
   // --- Main Layout ---
   QWidget *centralWidget = new QWidget;
@@ -217,8 +232,7 @@ MainWindow::createUi()
   mainLayout->setContentsMargins(0, 0, 0, 0);
   mainLayout->setSpacing(0);
   mainLayout->addWidget(connectionWidget);
-  mainLayout->addWidget(splitter, 1);
-  mainLayout->addWidget(statusLog);
+  mainLayout->addWidget(verticalSplitter, 1);
 
   setCentralWidget(centralWidget);
 
@@ -353,6 +367,7 @@ MainWindow::onControlReadyRead()
       // Set binary mode before anything else
       lastCommand = FtpCommand::TypeI;
       sendCommand("TYPE I");
+      m_keepAliveTimer->start();
     }
     else if (responseCode == 200 && lastCommand == FtpCommand::TypeI)
     {  // TYPE I acknowledged
@@ -581,6 +596,7 @@ MainWindow::onControlDisconnected()
   qDebug() << "Control connection disconnected.";
   logStatus("Frånkopplad från servern.");
   m_isConnected = false;
+  m_keepAliveTimer->stop();
   remoteListWidget->clear();
   connectButton->setText("Connect");
   hostLineEdit->setEnabled(true);

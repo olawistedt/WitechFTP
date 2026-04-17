@@ -87,6 +87,7 @@ private:
   QTextStream *controlStream;
   QByteArray dataBuffer;
   bool m_waitingForDataConnection = false;
+  QTimer *m_keepAliveTimer = nullptr;
 
   enum class FtpCommand
   {
