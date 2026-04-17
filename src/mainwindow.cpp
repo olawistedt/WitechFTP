@@ -2,6 +2,7 @@
 
 #include <QAbstractSocket>
 #include <QByteArray>
+#include <QDateTime>
 #include <QDebug>
 #include <QDir>
 #include <QFile>
@@ -28,6 +29,7 @@
 #include <QTextStream>
 #include <QTimer>
 #include <QTreeView>
+#include <QTextEdit>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -202,6 +204,13 @@ MainWindow::createUi()
   splitter->setStretchFactor(0, 3);
   splitter->setStretchFactor(1, 2);
 
+  // --- Status Log ---
+  statusLog = new QTextEdit;
+  statusLog->setReadOnly(true);
+  statusLog->setMaximumHeight(240);
+  statusLog->setFont(QFont("Courier New", 8));
+  statusLog->setPlaceholderText("Status log...");
+
   // --- Main Layout ---
   QWidget *centralWidget = new QWidget;
   QVBoxLayout *mainLayout = new QVBoxLayout(centralWidget);
@@ -209,6 +218,7 @@ MainWindow::createUi()
   mainLayout->setSpacing(0);
   mainLayout->addWidget(connectionWidget);
   mainLayout->addWidget(splitter, 1);
+  mainLayout->addWidget(statusLog);
 
   setCentralWidget(centralWidget);
 
@@ -253,11 +263,19 @@ MainWindow::connectOrDisconnect()
     passwordLineEdit->setText(password);
   }
 
+  logStatus(QString("Ansluter till %1:21...").arg(hostLineEdit->text()));
   controlSocket->connectToHost(hostLineEdit->text(), 21);
   connectButton->setText("Connecting...");
   hostLineEdit->setEnabled(false);
   usernameLineEdit->setEnabled(false);
   passwordLineEdit->setEnabled(false);
+}
+
+void
+MainWindow::logStatus(const QString &message)
+{
+  QString timestamp = QDateTime::currentDateTime().toString("hh:mm:ss");
+  statusLog->append(QString("[%1] %2").arg(timestamp, message));
 }
 
 void
@@ -331,7 +349,13 @@ MainWindow::onControlReadyRead()
     {  // Login successful
       m_isConnected = true;
       connectButton->setText("Disconnect");
-      // Ask server for current directory so we can build correct paths
+      logStatus(QString("Inloggad som %1").arg(usernameLineEdit->text()));
+      // Set binary mode before anything else
+      lastCommand = FtpCommand::TypeI;
+      sendCommand("TYPE I");
+    }
+    else if (responseCode == 200 && lastCommand == FtpCommand::TypeI)
+    {  // TYPE I acknowledged
       lastCommand = FtpCommand::Pwd;
       sendCommand("PWD");
     }
@@ -354,6 +378,7 @@ MainWindow::onControlReadyRead()
     else if (responseCode == 250 && lastCommand == FtpCommand::Cwd)
     {  // CWD successful
       currentPath = pendingPath;
+      logStatus(QString("\u00d6ppnar mapp: %1").arg(currentPath));
       lastCommand = FtpCommand::List;
       sendCommand("PASV");  // Refresh list
     }
@@ -386,12 +411,19 @@ MainWindow::onControlReadyRead()
       else if (lastCommand == FtpCommand::Stor)
       {
         qDebug() << "Server is ready to receive file.";
-        QByteArray fileContent = m_fileToUpload->readAll();
-        dataSocket->write(fileContent);
-        dataSocket->disconnectFromHost();  // Signal that we are done writing
-        m_fileToUpload->close();
-        delete m_fileToUpload;
-        m_fileToUpload = nullptr;
+        if (m_fileToUpload)
+        {
+          QByteArray fileContent = m_fileToUpload->readAll();
+          dataSocket->write(fileContent);
+          dataSocket->disconnectFromHost();  // Signal that we are done writing
+          m_fileToUpload->close();
+          delete m_fileToUpload;
+          m_fileToUpload = nullptr;
+        }
+        else
+        {
+          dataSocket->disconnectFromHost();
+        }
       }
       else if (lastCommand == FtpCommand::Retr)
       {
@@ -493,6 +525,53 @@ MainWindow::onControlReadyRead()
         QMessageBox::critical(this, "Delete Failed", "Failed to delete remote folder.");
       }
     }
+    else if (responseCode == 213 && lastCommand == FtpCommand::Size)
+    {  // SIZE response: "213 <bytes>"
+      qint64 remoteSize = response.mid(4).trimmed().toLongLong();
+      if (remoteSize == m_localFileSizeForVerify)
+      {
+        logStatus(QString("Verifiering OK: %1 (%2 byte)").arg(m_pendingRemotePathForUpload).arg(remoteSize));
+      }
+      else
+      {
+        logStatus(QString("VARNING: Storleksskillnad för %1 – lokal: %2 byte, server: %3 byte")
+                      .arg(m_pendingRemotePathForUpload)
+                      .arg(m_localFileSizeForVerify)
+                      .arg(remoteSize));
+        QMessageBox::warning(this,
+                             "Uppladdningsfel",
+                             QString("Fil %1 verifierades inte.\nLokal storlek: %2 byte\nServerstorlek: %3 byte")
+                                 .arg(m_pendingRemotePathForUpload)
+                                 .arg(m_localFileSizeForVerify)
+                                 .arg(remoteSize));
+      }
+      m_uploadQueue.dequeue();
+      m_pendingRemotePathForUpload.clear();
+      m_localFileSizeForVerify = 0;
+      lastCommand = FtpCommand::None;
+      if (!m_uploadQueue.isEmpty())
+        processUploadQueue();
+      else
+      {
+        lastCommand = FtpCommand::List;
+        sendCommand("PASV");
+      }
+    }
+    else if (responseCode == 550 && lastCommand == FtpCommand::Size)
+    {  // SIZE not supported or file not found on server
+      logStatus(QString("VARNING: Kunde inte verifiera %1 – SIZE-kommando stödjs ej av servern").arg(m_pendingRemotePathForUpload));
+      m_uploadQueue.dequeue();
+      m_pendingRemotePathForUpload.clear();
+      m_localFileSizeForVerify = 0;
+      lastCommand = FtpCommand::None;
+      if (!m_uploadQueue.isEmpty())
+        processUploadQueue();
+      else
+      {
+        lastCommand = FtpCommand::List;
+        sendCommand("PASV");
+      }
+    }
   }
 }
 
@@ -500,6 +579,7 @@ void
 MainWindow::onControlDisconnected()
 {
   qDebug() << "Control connection disconnected.";
+  logStatus("Frånkopplad från servern.");
   m_isConnected = false;
   remoteListWidget->clear();
   connectButton->setText("Connect");
@@ -552,11 +632,13 @@ MainWindow::onDataConnected()
   else if (m_waitingForDataConnection && lastCommand == FtpCommand::Stor)
   {
     m_waitingForDataConnection = false;
+    logStatus(QString("Laddar upp till: %1").arg(m_pendingRemotePathForUpload));
     sendCommand("STOR " + m_pendingRemotePathForUpload);
   }
   else if (m_waitingForDataConnection && lastCommand == FtpCommand::Retr)
   {
     m_waitingForDataConnection = false;
+    logStatus(QString("Laddar ner: %1").arg(m_pendingFileNameForDownload));
     sendCommand("RETR " + m_pendingFileNameForDownload);
   }
 }
@@ -575,6 +657,7 @@ MainWindow::onDataDisconnected()
     if (currentPath != "/")
     {
       QListWidgetItem *upItem = new QListWidgetItem("..");
+      upItem->setData(Qt::UserRole, QString(".."));
       upItem->setIcon(style()->standardIcon(QStyle::SP_DirIcon));
       remoteListWidget->addItem(upItem);
       isDirectory[".."] = true;
@@ -597,7 +680,28 @@ MainWindow::onDataDisconnected()
       bool isDir = parts[0].startsWith('d');
       isDirectory[name] = isDir;
 
-      QListWidgetItem *item = new QListWidgetItem(name);
+      QString sizeStr;
+      if (isDir)
+      {
+        sizeStr = "<mapp>";
+      }
+      else
+      {
+        qint64 size = parts[4].toLongLong();
+        if (size < 1024)
+          sizeStr = QString("%1 B").arg(size);
+        else if (size < 1024 * 1024)
+          sizeStr = QString("%1 KB").arg(size / 1024.0, 0, 'f', 1);
+        else if (size < 1024LL * 1024 * 1024)
+          sizeStr = QString("%1 MB").arg(size / (1024.0 * 1024), 0, 'f', 1);
+        else
+          sizeStr = QString("%1 GB").arg(size / (1024.0 * 1024 * 1024), 0, 'f', 1);
+      }
+      QString dateStr = parts[5] + " " + parts[6] + " " + parts[7];
+      QString displayText = name + "    " + sizeStr + "    " + dateStr;
+
+      QListWidgetItem *item = new QListWidgetItem(displayText);
+      item->setData(Qt::UserRole, name);
       if (isDir)
       {
         item->setIcon(style()->standardIcon(QStyle::SP_DirIcon));
@@ -616,25 +720,11 @@ MainWindow::onDataDisconnected()
 
   if (lastCommand == FtpCommand::Stor)
   {
-    qDebug() << "File upload complete. Dequeuing and refreshing list.";
-    m_uploadQueue.dequeue();
-    m_pendingRemotePathForUpload.clear();
-
+    qDebug() << "File upload complete. Sending SIZE for verification.";
     dataBuffer.clear();
-    lastCommand = FtpCommand::None;
-
-    // Process next upload or refresh the list
-    if (m_uploadQueue.isEmpty())
-    {
-      // All uploads done, refresh the remote file list
-      lastCommand = FtpCommand::List;
-      sendCommand("PASV");
-    }
-    else
-    {
-      // Process next upload
-      processUploadQueue();
-    }
+    // Send SIZE to verify the uploaded file matches the local file
+    lastCommand = FtpCommand::Size;
+    sendCommand("SIZE " + m_pendingRemotePathForUpload);
     return;
   }
 
@@ -793,7 +883,9 @@ MainWindow::showRemoteContextMenu(const QPoint &pos)
   if (!item)
     return;
 
-  QString itemName = item->text();
+  QString itemName = item->data(Qt::UserRole).toString();
+  if (itemName.isEmpty())
+    itemName = item->text();
 
   // Skip ".." directory in context menu
   if (itemName == "..")
@@ -861,6 +953,7 @@ MainWindow::deleteRemoteFileConfirmed(const QString &fileName)
     remoteFilePath = currentPath + "/" + fileName;
   }
 
+  logStatus(QString("Raderar fil: %1").arg(remoteFilePath));
   // Send DELE command
   lastCommand = FtpCommand::Dele;
   sendCommand("DELE " + remoteFilePath);
@@ -902,12 +995,14 @@ MainWindow::processRemoteDeleteQueue()
     FtpDeleteCommand cmd = m_remoteDeleteQueue.dequeue();
     if (cmd.type == FtpDeleteCommand::DeleteFile)
     {
+      logStatus(QString("Raderar fil: %1").arg(cmd.path));
       lastCommand = FtpCommand::Dele;
       sendCommand("DELE " + cmd.path);
       return;
     }
     if (cmd.type == FtpDeleteCommand::DeleteDir)
     {
+      logStatus(QString("Raderar mapp: %1").arg(cmd.path));
       lastCommand = FtpCommand::Rmd;
       sendCommand("RMD " + cmd.path);
       return;
@@ -926,6 +1021,7 @@ MainWindow::processRemoteDeleteQueue()
   if (!m_remoteDirsToDelete.isEmpty())
   {
     QString dirPath = m_remoteDirsToDelete.pop();
+    logStatus(QString("Raderar mapp: %1").arg(dirPath));
     lastCommand = FtpCommand::Rmd;
     sendCommand("RMD " + dirPath);
     return;
@@ -1005,6 +1101,7 @@ MainWindow::processUploadQueue()
 
   if (command.type == FtpUploadCommand::CreateDirectory)
   {
+    logStatus(QString("Skapar mapp: %1").arg(command.remotePath));
     lastCommand = FtpCommand::Mkd;
     sendCommand("MKD " + command.remotePath);
   }
@@ -1023,7 +1120,9 @@ MainWindow::processUploadQueue()
       processUploadQueue();  // process next
       return;
     }
+    logStatus(QString("Förbereder uppladdning: %1 → %2").arg(command.localPath, command.remotePath));
     m_pendingRemotePathForUpload = command.remotePath;
+    m_localFileSizeForVerify = m_fileToUpload->size();
     sendCommand("PASV");
   }
 }
@@ -1075,7 +1174,9 @@ MainWindow::processItem(QListWidgetItem *item)
   if (!m_isConnected)
     return;
 
-  QString name = item->text();
+  QString name = item->data(Qt::UserRole).toString();
+  if (name.isEmpty())
+    name = item->text();
   if (!isDirectory.value(name, false))
   {
     downloadFile(name);
@@ -1130,6 +1231,7 @@ MainWindow::downloadFile(const QString &fileName)
   }
 
   QString localFilePath = localDir + "/" + fileName;
+  logStatus(QString("Laddar ner: %1 → %2").arg(fileName, localFilePath));
 
   // Check if file already exists
   if (QFile::exists(localFilePath))

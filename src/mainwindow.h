@@ -21,6 +21,7 @@ class QListWidgetItem;
 class QTcpSocket;
 class QTextStream;
 class QFile;
+class QTextEdit;
 QT_END_NAMESPACE
 
 class MainWindow : public QMainWindow
@@ -57,6 +58,7 @@ private slots:
 
 private:
   void createUi();
+  void logStatus(const QString &message);
   void sendCommand(const QString &command);
   void handlePasvResponse(const QString &response);
   void recursivelyPopulateUploadQueue(const QString &localPath, const QString &remotePath);
@@ -76,6 +78,9 @@ private:
 
   QListWidget *remoteListWidget;
 
+  // Status log
+  QTextEdit *statusLog;
+
   // FTP
   QTcpSocket *controlSocket;
   QTcpSocket *dataSocket;
@@ -94,7 +99,9 @@ private:
     Retr,
     Dele,
     Rmd,
-    ListForDelete
+    ListForDelete,
+    Size,
+    TypeI
   };
   FtpCommand lastCommand = FtpCommand::None;
   QString pendingPath;
@@ -118,6 +125,7 @@ private:
   QQueue<FtpUploadCommand> m_uploadQueue;
   QFile *m_fileToUpload = nullptr;
   QString m_pendingRemotePathForUpload;
+  qint64 m_localFileSizeForVerify = 0;
   QFile *m_fileToDownload = nullptr;
   QString m_pendingFileNameForDownload;
   QString m_remoteFileToDelete;
