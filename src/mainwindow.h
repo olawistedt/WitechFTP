@@ -34,6 +34,7 @@ private slots:
   void connectOrDisconnect();
   void processItem(QListWidgetItem *item);
   void uploadFile();
+  void uploadFile(const QString &filePath);
   void downloadFile(const QString &fileName);
 
   // Control connection slots

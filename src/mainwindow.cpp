@@ -890,11 +890,21 @@ MainWindow::showLocalContextMenu(const QPoint &pos)
   }
   else
   {
+    QAction *uploadAction = contextMenu.addAction("Upload file to server");
     QAction *deleteAction = contextMenu.addAction("Delete");
 
     QAction *selectedAction = contextMenu.exec(localListWidget->viewport()->mapToGlobal(pos));
 
-    if (selectedAction == deleteAction)
+    if (selectedAction == uploadAction)
+    {
+      if (!m_isConnected)
+      {
+        QMessageBox::warning(this, "Not Connected", "Connect to the server to upload files.");
+        return;
+      }
+      uploadFile(itemPath);
+    }
+    else if (selectedAction == deleteAction)
     {
       QMessageBox::StandardButton reply =
           QMessageBox::question(this,
@@ -1274,6 +1284,24 @@ void
 MainWindow::uploadFile()
 {
   // To be implemented
+}
+
+void
+MainWindow::uploadFile(const QString &filePath)
+{
+  if (!m_isConnected)
+    return;
+
+  QFileInfo fileInfo(filePath);
+  if (!fileInfo.exists())
+  {
+    QMessageBox::critical(this, "Error", "File does not exist.");
+    return;
+  }
+
+  // Add to upload queue for the current remote directory
+  m_uploadQueue.enqueue({ FtpUploadCommand::UploadFile, filePath, currentPath + "/" + fileInfo.fileName() });
+  processUploadQueue();
 }
 
 void
