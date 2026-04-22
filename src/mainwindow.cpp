@@ -429,7 +429,7 @@ MainWindow::onControlReadyRead()
       lastCommand = FtpCommand::None;
     }
     else if (responseCode == 257 && lastCommand == FtpCommand::Mkd)
-    {  // MKD success
+    {  // MKD success (from upload queue)
       m_uploadQueue.dequeue();
       processUploadQueue();
     }
@@ -438,6 +438,16 @@ MainWindow::onControlReadyRead()
       qDebug() << "MKD failed, assuming directory exists:" << response;
       m_uploadQueue.dequeue();
       processUploadQueue();
+    }
+    else if (responseCode == 257 && lastCommand == FtpCommand::MkdManual)
+    {  // MKD success (manual folder creation) – refresh listing
+      lastCommand = FtpCommand::List;
+      sendCommand("PASV");
+    }
+    else if (responseCode >= 500 && lastCommand == FtpCommand::MkdManual)
+    {  // MKD failed
+      logStatus(QString("Kunde inte skapa mapp: %1").arg(response));
+      lastCommand = FtpCommand::None;
     }
     else if (responseCode == 227)
     {  // Entering Passive Mode
@@ -901,60 +911,58 @@ MainWindow::showRemoteContextMenu(const QPoint &pos)
     return;
 
   QListWidgetItem *item = remoteListWidget->itemAt(pos);
-  if (!item)
-    return;
 
-  QString itemName = item->data(Qt::UserRole).toString();
-  if (itemName.isEmpty())
-    itemName = item->text();
-
-  // Skip ".." directory in context menu
-  if (itemName == "..")
-    return;
+  QString itemName;
+  if (item)
+  {
+    itemName = item->data(Qt::UserRole).toString();
+    if (itemName.isEmpty())
+      itemName = item->text();
+    if (itemName == "..")
+      itemName.clear();
+  }
 
   QMenu contextMenu(this);
+  QAction *createFolderAction = contextMenu.addAction("Skapa ny mapp");
+  QAction *deleteAction = nullptr;
+  QAction *deleteFolderAction = nullptr;
 
-  // Check if it's a directory or file
-  if (!isDirectory.value(itemName, false))
+  if (!itemName.isEmpty())
   {
-    // It's a file - add delete option
-    QAction *deleteAction = contextMenu.addAction("Delete");
-
-    QAction *selectedAction = contextMenu.exec(remoteListWidget->viewport()->mapToGlobal(pos));
-
-    if (selectedAction == deleteAction)
-    {
-      QMessageBox::StandardButton reply =
-          QMessageBox::question(this,
-                                "Delete File",
-                                QString("Are you sure you want to delete '%1'?").arg(itemName),
-                                QMessageBox::Yes | QMessageBox::No);
-
-      if (reply == QMessageBox::Yes)
-      {
-        deleteRemoteFileConfirmed(itemName);
-      }
-    }
+    contextMenu.addSeparator();
+    if (!isDirectory.value(itemName, false))
+      deleteAction = contextMenu.addAction("Ta bort fil");
+    else
+      deleteFolderAction = contextMenu.addAction("Ta bort mapp");
   }
-  else
+
+  QAction *selectedAction = contextMenu.exec(remoteListWidget->viewport()->mapToGlobal(pos));
+  if (!selectedAction)
+    return;
+
+  if (selectedAction == createFolderAction)
   {
-    QAction *deleteFolderAction = contextMenu.addAction("Delete folder");
-
-    QAction *selectedAction = contextMenu.exec(remoteListWidget->viewport()->mapToGlobal(pos));
-
-    if (selectedAction == deleteFolderAction)
-    {
-      QMessageBox::StandardButton reply =
-          QMessageBox::question(this,
-                                "Delete Folder",
-                                QString("Are you sure you want to delete '%1'?").arg(itemName),
-                                QMessageBox::Yes | QMessageBox::No);
-
-      if (reply == QMessageBox::Yes)
-      {
-        deleteRemoteDirectoryConfirmed(itemName);
-      }
-    }
+    createRemoteFolder();
+  }
+  else if (selectedAction == deleteAction)
+  {
+    QMessageBox::StandardButton reply =
+        QMessageBox::question(this,
+                              "Ta bort fil",
+                              QString("Är du säker på att du vill ta bort '%1'?").arg(itemName),
+                              QMessageBox::Yes | QMessageBox::No);
+    if (reply == QMessageBox::Yes)
+      deleteRemoteFileConfirmed(itemName);
+  }
+  else if (selectedAction == deleteFolderAction)
+  {
+    QMessageBox::StandardButton reply =
+        QMessageBox::question(this,
+                              "Ta bort mapp",
+                              QString("Är du säker på att du vill ta bort '%1'?").arg(itemName),
+                              QMessageBox::Yes | QMessageBox::No);
+    if (reply == QMessageBox::Yes)
+      deleteRemoteDirectoryConfirmed(itemName);
   }
 }
 
@@ -978,6 +986,33 @@ MainWindow::deleteRemoteFileConfirmed(const QString &fileName)
   // Send DELE command
   lastCommand = FtpCommand::Dele;
   sendCommand("DELE " + remoteFilePath);
+}
+
+void
+MainWindow::createRemoteFolder()
+{
+  if (!m_isConnected)
+    return;
+
+  bool ok;
+  QString folderName = QInputDialog::getText(this,
+                                             "Skapa ny mapp",
+                                             "Mappnamn:",
+                                             QLineEdit::Normal,
+                                             "",
+                                             &ok);
+  if (!ok || folderName.trimmed().isEmpty())
+    return;
+
+  QString remotePath;
+  if (currentPath.endsWith('/'))
+    remotePath = currentPath + folderName.trimmed();
+  else
+    remotePath = currentPath + "/" + folderName.trimmed();
+
+  logStatus(QString("Skapar mapp: %1").arg(remotePath));
+  lastCommand = FtpCommand::MkdManual;
+  sendCommand("MKD " + remotePath);
 }
 
 void

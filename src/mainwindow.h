@@ -53,6 +53,7 @@ private slots:
   void localItemDoubleClicked(QListWidgetItem *item);
   void deleteRemoteFileConfirmed(const QString &fileName);
   void deleteRemoteDirectoryConfirmed(const QString &dirName);
+  void createRemoteFolder();
 
 private:
   void createUi();
@@ -95,6 +96,7 @@ private:
     List,
     Pwd,
     Mkd,
+    MkdManual,
     Stor,
     Retr,
     Dele,

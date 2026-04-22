@@ -18,7 +18,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Lägg till källkodsfiler
-add_executable(QtFtpClient
+add_executable(QtFtpClient WIN32
     src/main.cpp
     src/mainwindow.cpp
     src/mainwindow.h
