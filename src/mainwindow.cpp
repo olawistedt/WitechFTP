@@ -129,6 +129,13 @@ void
 MainWindow::createUi()
 {
   // This function remains largely the same as it just sets up the UI.
+  // --- Title ---
+  QLabel *titleLabel = new QLabel("WitechFTP v1.1");
+  QFont titleFont("Arial", 24, QFont::Bold);
+  titleLabel->setFont(titleFont);
+  titleLabel->setAlignment(Qt::AlignLeft);
+  titleLabel->setStyleSheet("padding: 10px;");
+
   // --- Connection Bar ---
   QWidget *connectionWidget = new QWidget;
   QHBoxLayout *connectionLayout = new QHBoxLayout(connectionWidget);
@@ -218,6 +225,7 @@ MainWindow::createUi()
   QVBoxLayout *mainLayout = new QVBoxLayout(centralWidget);
   mainLayout->setContentsMargins(0, 0, 0, 0);
   mainLayout->setSpacing(0);
+  mainLayout->addWidget(titleLabel);
   mainLayout->addWidget(connectionWidget);
   mainLayout->addWidget(verticalSplitter, 1);
 
