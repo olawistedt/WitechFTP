@@ -36,6 +36,7 @@ public:
   void uploadFile(const QString &localPath, const QString &remotePath);
   void uploadFolder(const QString &localPath, const QString &remotePath);
   void downloadFile(const QString &fileName, const QString &localDir);
+  void downloadFolder(const QString &remoteFolderName, const QString &localDir);
   void deleteRemoteFile(const QString &fileName, const QString &currentPath);
   void deleteRemoteDirectory(const QString &dirName, const QString &currentPath);
   void createRemoteFolder(const QString &folderName, const QString &currentPath);
@@ -94,6 +95,7 @@ private:
     Dele,
     Rmd,
     ListForDelete,
+    ListForDownload,
     Size,
     TypeI
   };
@@ -110,6 +112,18 @@ private:
     QString remotePath;  // Path on server for creation
   };
 
+  struct FtpDownloadCommand
+  {
+    enum CommandType
+    {
+      CreateLocalDirectory,
+      DownloadFile
+    };
+    CommandType type;
+    QString remotePath;
+    QString localPath;
+  };
+
   struct FtpDeleteCommand
   {
     enum CommandType
@@ -124,6 +138,7 @@ private:
   void sendCommand(const QString &command);
   void handlePasvResponse(const QString &response);
   void processUploadQueue();
+  void processDownloadQueue();
   void processRemoteDeleteQueue();
 
   // Sockets and streams
@@ -150,6 +165,12 @@ private:
   // Download state
   QFile *m_fileToDownload;
   QString m_pendingFileNameForDownload;
+  QQueue<FtpDownloadCommand> m_downloadQueue;
+  QStack<QString> m_remoteDirsToExploreForDownload;
+  QString m_currentExploreDirForDownload;
+  QString m_localBaseDirForDownload;
+  QString m_baseRemotePathForDownload;
+  bool m_downloadInProgress;
 
   // Delete state
   QString m_remoteFileToDelete;

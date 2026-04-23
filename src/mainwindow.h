@@ -31,6 +31,7 @@ private slots:
   void uploadFile();
   void uploadFile(const QString &filePath);
   void downloadFile(const QString &fileName);
+  void downloadFolder(const QString &folderName);
 
   // FTP communicator signal handlers
   void onFtpConnected();
@@ -38,6 +39,7 @@ private slots:
   void onFtpConnectionError(const QString &error);
   void onFtpStatusUpdated(const QString &message);
   void onFtpDirectoryListReceived();
+  void onFtpDownloadComplete();
 
   void showLocalContextMenu(const QPoint &pos);
   void showRemoteContextMenu(const QPoint &pos);

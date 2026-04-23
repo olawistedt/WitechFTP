@@ -24,6 +24,7 @@ FtpCommunicator::FtpCommunicator(QObject *parent)
     , m_fileToUpload(nullptr)
     , m_localFileSizeForVerify(0)
     , m_fileToDownload(nullptr)
+    , m_downloadInProgress(false)
     , m_remoteDirToDelete("")
     , m_remoteDeleteInProgress(false)
 {
@@ -124,6 +125,14 @@ FtpCommunicator::onControlReadyRead()
     QString response = m_controlSocket->readLine().trimmed();
     qDebug() << "S:" << response;
 
+    if (response.length() < 3)
+      continue;
+
+    // Check for multiline response continuation (e.g., "226-...")
+    // Only the final line (e.g., "226 OK") should trigger actions.
+    if (response.length() >= 4 && response.at(3) == '-')
+      continue;
+
     int responseCode = response.left(3).toInt();
 
     if (responseCode == 220)
@@ -179,6 +188,12 @@ FtpCommunicator::onControlReadyRead()
       qDebug() << "CWD failed:" << response;
       m_lastCommand = FtpCommand::None;
     }
+    else if (responseCode == 550 && m_lastCommand == FtpCommand::ListForDownload)
+    {
+      qDebug() << "LIST (download) failed:" << response;
+      m_lastCommand = FtpCommand::None;
+      processDownloadQueue();
+    }
     else if (responseCode == 257 && m_lastCommand == FtpCommand::Mkd)
     {  // MKD success (from upload queue)
       m_uploadQueue.dequeue();
@@ -204,7 +219,8 @@ FtpCommunicator::onControlReadyRead()
     else if (responseCode == 227)
     {  // Entering Passive Mode
       if (m_lastCommand == FtpCommand::List || m_lastCommand == FtpCommand::Stor ||
-          m_lastCommand == FtpCommand::Retr || m_lastCommand == FtpCommand::ListForDelete)
+          m_lastCommand == FtpCommand::Retr || m_lastCommand == FtpCommand::ListForDelete ||
+          m_lastCommand == FtpCommand::ListForDownload)
         handlePasvResponse(response);
     }
     else if (responseCode == 150)
@@ -251,11 +267,16 @@ FtpCommunicator::onControlReadyRead()
           m_fileToDownload = nullptr;
         }
         m_pendingFileNameForDownload.clear();
-        emit downloadComplete();
-        m_lastCommand = FtpCommand::None;
-        // Refresh remote file list
-        m_lastCommand = FtpCommand::List;
-        sendCommand("PASV");
+
+        if (m_downloadInProgress)
+        {
+          processDownloadQueue();
+        }
+        else
+        {
+          emit downloadComplete();
+          m_lastCommand = FtpCommand::None;
+        }
       }
     }
     else if (responseCode == 250 && m_lastCommand == FtpCommand::Dele)
@@ -383,7 +404,8 @@ FtpCommunicator::onControlError(QAbstractSocket::SocketError socketError)
 void
 FtpCommunicator::onDataReadyRead()
 {
-  if (m_lastCommand == FtpCommand::List || m_lastCommand == FtpCommand::ListForDelete)
+  if (m_lastCommand == FtpCommand::List || m_lastCommand == FtpCommand::ListForDelete ||
+      m_lastCommand == FtpCommand::ListForDownload)
   {
     m_dataBuffer.append(m_dataSocket->readAll());
   }
@@ -409,6 +431,11 @@ FtpCommunicator::onDataConnected()
   {
     m_waitingForDataConnection = false;
     sendCommand("LIST " + m_pendingDeleteListPath);
+  }
+  else if (m_waitingForDataConnection && m_lastCommand == FtpCommand::ListForDownload)
+  {
+    m_waitingForDataConnection = false;
+    sendCommand("LIST " + m_currentExploreDirForDownload);
   }
   else if (m_waitingForDataConnection && m_lastCommand == FtpCommand::Stor)
   {
@@ -504,6 +531,72 @@ FtpCommunicator::onDataDisconnected()
     m_dataBuffer.clear();
     m_lastCommand = FtpCommand::None;
     processRemoteDeleteQueue();
+  }
+
+  if (m_lastCommand == FtpCommand::ListForDownload)
+  {
+    QString listing(m_dataBuffer);
+    QStringList lines = listing.split('\n', Qt::SkipEmptyParts);
+
+    // To map remote to local, we need a base remote dir.
+    // However, for now let's just use the leaf folder name as the root locally.
+    // Wait, m_localBaseDirForDownload already points to where we want it.
+    
+    // We need to determine the local path for m_currentExploreDirForDownload
+    // If m_currentPath was /a/b and we download folder 'c', 
+    // remotePath is /a/b/c and localBaseDir is (say) C:/downloads.
+    // We want /a/b/c -> C:/downloads/c
+    // /a/b/c/d -> C:/downloads/c/d
+    
+    // Let's find the relative path from the *parent* of the original download folder.
+    // But it's easier to just pass the base remote path.
+    // For now, let's assume m_currentPath was the parent at start.
+    
+    QString baseRemotePath = m_baseRemotePathForDownload;
+    if (!baseRemotePath.endsWith('/')) baseRemotePath += "/";
+    
+    QString relPath = m_currentExploreDirForDownload;
+    if (relPath.startsWith(baseRemotePath)) {
+        relPath = relPath.mid(baseRemotePath.length());
+    }
+    
+    QString localDirPath = QDir(m_localBaseDirForDownload).filePath(relPath);
+    m_downloadQueue.enqueue({ FtpDownloadCommand::CreateLocalDirectory, "", localDirPath });
+
+    for (const QString &line : lines)
+    {
+      QString trimmedLine = line.trimmed();
+      QStringList parts = trimmedLine.split(' ', Qt::SkipEmptyParts);
+      if (parts.size() < 9)
+        continue;
+
+      QString name = parts.sliced(8).join(' ');
+      if (name == "." || name == "..")
+        continue;
+
+      bool isDir = parts[0].startsWith('d');
+
+      QString remoteFullPath;
+      if (m_currentExploreDirForDownload.endsWith('/'))
+        remoteFullPath = m_currentExploreDirForDownload + name;
+      else
+        remoteFullPath = m_currentExploreDirForDownload + "/" + name;
+      
+      QString localFullPath = QDir(localDirPath).filePath(name);
+
+      if (isDir)
+      {
+        m_remoteDirsToExploreForDownload.push(remoteFullPath);
+      }
+      else
+      {
+        m_downloadQueue.enqueue({ FtpDownloadCommand::DownloadFile, remoteFullPath, localFullPath });
+      }
+    }
+
+    m_dataBuffer.clear();
+    m_lastCommand = FtpCommand::None;
+    processDownloadQueue();
   }
 }
 
@@ -817,6 +910,83 @@ FtpCommunicator::processRemoteDeleteQueue()
   m_pendingDeleteListPath.clear();
   m_remoteDirToDelete.clear();
   emit deletionComplete();
+  m_lastCommand = FtpCommand::List;
+  sendCommand("PASV");
+}
+
+void
+FtpCommunicator::downloadFolder(const QString &remoteFolderName, const QString &localDir)
+{
+  QString remotePath;
+  if (m_currentPath.endsWith('/'))
+    remotePath = m_currentPath + remoteFolderName;
+  else
+    remotePath = m_currentPath + "/" + remoteFolderName;
+
+  m_downloadInProgress = true;
+  m_downloadQueue.clear();
+  m_remoteDirsToExploreForDownload.clear();
+  m_localBaseDirForDownload = localDir;
+  m_baseRemotePathForDownload = m_currentPath;
+
+  // Start by exploring the top directory
+  m_remoteDirsToExploreForDownload.push(remotePath);
+  processDownloadQueue();
+}
+
+void
+FtpCommunicator::processDownloadQueue()
+{
+  if (!m_downloadInProgress)
+    return;
+
+  // 1. Process files in the download queue
+  if (!m_downloadQueue.isEmpty())
+  {
+    FtpDownloadCommand cmd = m_downloadQueue.dequeue();
+    if (cmd.type == FtpDownloadCommand::CreateLocalDirectory)
+    {
+      QDir().mkpath(cmd.localPath);
+      processDownloadQueue();
+      return;
+    }
+    else if (cmd.type == FtpDownloadCommand::DownloadFile)
+    {
+      m_fileToDownload = new QFile(cmd.localPath);
+      if (!m_fileToDownload->open(QIODevice::WriteOnly))
+      {
+        qDebug() << "Could not open local file for writing:" << cmd.localPath;
+        delete m_fileToDownload;
+        m_fileToDownload = nullptr;
+        processDownloadQueue();
+        return;
+      }
+      m_pendingFileNameForDownload = cmd.remotePath;
+      m_lastCommand = FtpCommand::Retr;
+      sendCommand("PASV");
+      return;
+    }
+  }
+
+  // 2. If no files to download, explore more directories
+  if (!m_remoteDirsToExploreForDownload.isEmpty())
+  {
+    m_currentExploreDirForDownload = m_remoteDirsToExploreForDownload.pop();
+
+    // Map remote path to local path
+    // We need to know where the "root" of this download is.
+    // Let's assume the first dir pushed is the base.
+    // Actually, we can just use relative paths if we know the base remote dir.
+    // But for simplicity, let's just use the current dir name.
+
+    m_lastCommand = FtpCommand::ListForDownload;
+    sendCommand("PASV");
+    return;
+  }
+
+  // 3. Finished!
+  m_downloadInProgress = false;
+  emit downloadComplete();
   m_lastCommand = FtpCommand::List;
   sendCommand("PASV");
 }

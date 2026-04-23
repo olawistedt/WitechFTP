@@ -42,6 +42,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   connect(m_ftpCommunicator, &FtpCommunicator::connectionError, this, &MainWindow::onFtpConnectionError);
   connect(m_ftpCommunicator, &FtpCommunicator::statusUpdated, this, &MainWindow::onFtpStatusUpdated);
   connect(m_ftpCommunicator, &FtpCommunicator::directoryListReceived, this, &MainWindow::onFtpDirectoryListReceived);
+  connect(m_ftpCommunicator, &FtpCommunicator::downloadComplete, this, &MainWindow::onFtpDownloadComplete);
 
   createUi();
 
@@ -365,6 +366,27 @@ MainWindow::onFtpDirectoryListReceived()
   }
 }
 
+void
+MainWindow::downloadFolder(const QString &folderName)
+{
+  if (!m_ftpCommunicator->isConnected())
+    return;
+
+  // Get the local directory where we'll save the folder
+  QString localDir = m_localCurrentPath.isEmpty() ? QDir::currentPath() : m_localCurrentPath;
+
+  // We should ideally check if the local folder exists, but let's let mkpath handle it.
+  
+  m_ftpCommunicator->downloadFolder(folderName, localDir);
+}
+
+void
+MainWindow::onFtpDownloadComplete()
+{
+  logStatus("Download complete.");
+  populateLocalList(m_localCurrentPath);
+}
+
 // --- Old FTP Connection Slots (removed) ---
 // The following methods have been moved to FtpCommunicator and are no longer needed:
 // onControlConnected(), onControlReadyRead(), onControlDisconnected(), onControlError()
@@ -499,6 +521,8 @@ MainWindow::showRemoteContextMenu(const QPoint &pos)
 
   QMenu contextMenu(this);
   QAction *createFolderAction = contextMenu.addAction("Skapa ny mapp");
+  QAction *downloadFileAction = nullptr;
+  QAction *downloadFolderAction = nullptr;
   QAction *deleteAction = nullptr;
   QAction *deleteFolderAction = nullptr;
 
@@ -506,9 +530,15 @@ MainWindow::showRemoteContextMenu(const QPoint &pos)
   {
     contextMenu.addSeparator();
     if (!m_remoteIsDirectory.value(itemName, false))
+    {
+      downloadFileAction = contextMenu.addAction("Download file");
       deleteAction = contextMenu.addAction("Ta bort fil");
+    }
     else
+    {
+      downloadFolderAction = contextMenu.addAction("Download folder");
       deleteFolderAction = contextMenu.addAction("Ta bort mapp");
+    }
   }
 
   QAction *selectedAction = contextMenu.exec(remoteListWidget->viewport()->mapToGlobal(pos));
@@ -518,6 +548,14 @@ MainWindow::showRemoteContextMenu(const QPoint &pos)
   if (selectedAction == createFolderAction)
   {
     createRemoteFolder();
+  }
+  else if (selectedAction == downloadFileAction)
+  {
+    downloadFile(itemName);
+  }
+  else if (selectedAction == downloadFolderAction)
+  {
+    downloadFolder(itemName);
   }
   else if (selectedAction == deleteAction)
   {
