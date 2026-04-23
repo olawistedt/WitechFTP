@@ -604,7 +604,7 @@ MainWindow::processItem(QListWidgetItem *item)
   if (name.isEmpty())
     name = item->text();
 
-  if (!m_remoteIsDirectory.value(name, false))
+  if (name != ".." && !m_remoteIsDirectory.value(name, false))
   {
     downloadFile(name);
     return;
