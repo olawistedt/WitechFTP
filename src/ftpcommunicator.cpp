@@ -24,6 +24,7 @@ FtpCommunicator::FtpCommunicator(QObject *parent)
     , m_fileToUpload(nullptr)
     , m_localFileSizeForVerify(0)
     , m_fileToDownload(nullptr)
+    , m_remoteDirToDelete("")
     , m_remoteDeleteInProgress(false)
 {
   m_keepAliveTimer->setInterval(60000);  // 60 seconds
@@ -203,7 +204,7 @@ FtpCommunicator::onControlReadyRead()
     else if (responseCode == 227)
     {  // Entering Passive Mode
       if (m_lastCommand == FtpCommand::List || m_lastCommand == FtpCommand::Stor ||
-          m_lastCommand == FtpCommand::Retr)
+          m_lastCommand == FtpCommand::Retr || m_lastCommand == FtpCommand::ListForDelete)
         handlePasvResponse(response);
     }
     else if (responseCode == 150)
@@ -309,18 +310,9 @@ FtpCommunicator::onControlReadyRead()
       m_lastCommand = FtpCommand::None;
       if (m_remoteDeleteInProgress)
       {
-        // Directory might not be empty, retry after processing queue
-        if (!m_remoteDirsToList.isEmpty() || !m_remoteDeleteQueue.isEmpty())
-        {
-          // There are still items to process
-          QString failedDir = m_remoteDirsToDelete.pop();
-          m_remoteDirsToDelete.push(failedDir);  // Put it back on the stack
-          processRemoteDeleteQueue();
-        }
-        else
-        {
-          processRemoteDeleteQueue();
-        }
+        // Directory might not be empty, try to list it and delete contents
+        m_remoteDirsToList.push(m_remoteDirToDelete);
+        processRemoteDeleteQueue();
       }
     }
     else if (responseCode == 213 && m_lastCommand == FtpCommand::Size)
@@ -712,7 +704,9 @@ FtpCommunicator::deleteRemoteDirectory(const QString &dirName, const QString &cu
   m_remoteDirsToList.clear();
   m_remoteDirsToDelete.clear();
 
-  m_remoteDirsToList.push(remoteDirPath);
+  emit statusUpdated(QString("Add directory to delete queue: %1").arg(remoteDirPath));
+  m_remoteDeleteQueue.enqueue({ FtpDeleteCommand::DeleteDir, remoteDirPath });
+
   processRemoteDeleteQueue();
 }
 
@@ -792,6 +786,7 @@ FtpCommunicator::processRemoteDeleteQueue()
     if (cmd.type == FtpDeleteCommand::DeleteDir)
     {
       emit statusUpdated(QString("Raderar mapp: %1").arg(cmd.path));
+      m_remoteDirToDelete = cmd.path;
       m_lastCommand = FtpCommand::Rmd;
       sendCommand("RMD " + cmd.path);
       return;
@@ -811,6 +806,7 @@ FtpCommunicator::processRemoteDeleteQueue()
   {
     QString dirPath = m_remoteDirsToDelete.pop();
     emit statusUpdated(QString("Raderar mapp: %1").arg(dirPath));
+    m_remoteDirToDelete = dirPath;
     m_lastCommand = FtpCommand::Rmd;
     sendCommand("RMD " + dirPath);
     return;
@@ -819,6 +815,7 @@ FtpCommunicator::processRemoteDeleteQueue()
   m_remoteDeleteInProgress = false;
   m_currentDeleteDir.clear();
   m_pendingDeleteListPath.clear();
+  m_remoteDirToDelete.clear();
   emit deletionComplete();
   m_lastCommand = FtpCommand::List;
   sendCommand("PASV");

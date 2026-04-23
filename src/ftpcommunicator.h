@@ -153,6 +153,7 @@ private:
 
   // Delete state
   QString m_remoteFileToDelete;
+  QString m_remoteDirToDelete;
   QQueue<FtpDeleteCommand> m_remoteDeleteQueue;
   QStack<QString> m_remoteDirsToList;
   QStack<QString> m_remoteDirsToDelete;
