@@ -46,6 +46,7 @@ private slots:
   void deleteRemoteFileConfirmed(const QString &fileName);
   void deleteRemoteDirectoryConfirmed(const QString &dirName);
   void createRemoteFolder();
+  void createLocalFolder();
 
 private:
   void createUi();

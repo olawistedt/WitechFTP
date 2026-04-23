@@ -375,80 +375,107 @@ void
 MainWindow::showLocalContextMenu(const QPoint &pos)
 {
   QListWidgetItem *item = localListWidget->itemAt(pos);
-  if (!item)
-    return;
-
-  QString itemPath = item->data(Qt::UserRole).toString();
-  if (itemPath == "..")
-    return;
+  QString itemPath;
+  if (item)
+  {
+    itemPath = item->data(Qt::UserRole).toString();
+    if (itemPath == "..")
+      itemPath.clear();
+  }
 
   QMenu contextMenu(this);
-  QFileInfo info(itemPath);
+  QAction *createFolderAction = contextMenu.addAction("Skapa Mapp");
+  QAction *uploadAction = nullptr;
+  QAction *deleteAction = nullptr;
 
-  if (info.isDir())
+  if (!itemPath.isEmpty())
   {
-    QAction *uploadAction = contextMenu.addAction("Upload folder to server");
-    QAction *deleteFolderAction = contextMenu.addAction("Delete folder");
-
-    QAction *selectedAction = contextMenu.exec(localListWidget->viewport()->mapToGlobal(pos));
-
-    if (selectedAction == uploadAction)
+    contextMenu.addSeparator();
+    QFileInfo info(itemPath);
+    if (info.isDir())
     {
-      if (!m_ftpCommunicator->isConnected())
-      {
-        QMessageBox::warning(this, "Not Connected", "Connect to the server to upload folders.");
-        return;
-      }
-      uploadFolder(itemPath);
+      uploadAction = contextMenu.addAction("Upload folder to server");
+      deleteAction = contextMenu.addAction("Delete folder");
     }
-    else if (selectedAction == deleteFolderAction)
+    else
     {
-      QMessageBox::StandardButton reply =
-          QMessageBox::question(this,
-                                "Delete Folder",
-                                QString("Are you sure you want to delete '%1'?").arg(info.fileName()),
-                                QMessageBox::Yes | QMessageBox::No);
-      if (reply == QMessageBox::Yes)
+      uploadAction = contextMenu.addAction("Upload file to server");
+      deleteAction = contextMenu.addAction("Delete");
+    }
+  }
+
+  QAction *selectedAction = contextMenu.exec(localListWidget->viewport()->mapToGlobal(pos));
+  if (!selectedAction)
+    return;
+
+  if (selectedAction == createFolderAction)
+  {
+    createLocalFolder();
+  }
+  else if (selectedAction == uploadAction)
+  {
+    if (!m_ftpCommunicator->isConnected())
+    {
+      QMessageBox::warning(this, "Not Connected", "Connect to the server to upload.");
+      return;
+    }
+    QFileInfo info(itemPath);
+    if (info.isDir())
+      uploadFolder(itemPath);
+    else
+      uploadFile(itemPath);
+  }
+  else if (selectedAction == deleteAction)
+  {
+    QFileInfo info(itemPath);
+    QString typeStr = info.isDir() ? "Folder" : "File";
+    QMessageBox::StandardButton reply =
+        QMessageBox::question(this,
+                              "Delete " + typeStr,
+                              QString("Are you sure you want to delete '%1'?").arg(info.fileName()),
+                              QMessageBox::Yes | QMessageBox::No);
+    if (reply == QMessageBox::Yes)
+    {
+      bool success = false;
+      if (info.isDir())
       {
         QDir dir(itemPath);
-        if (!dir.removeRecursively())
-          QMessageBox::critical(this, "Error", QString("Could not delete folder: %1").arg(info.fileName()));
-        else
-          populateLocalList(m_localCurrentPath);
+        success = dir.removeRecursively();
       }
+      else
+      {
+        success = QFile::remove(itemPath);
+      }
+
+      if (!success)
+        QMessageBox::critical(this, "Error", QString("Could not delete %1: %2").arg(typeStr.toLower(), info.fileName()));
+      else
+        populateLocalList(m_localCurrentPath);
     }
+  }
+}
+
+void
+MainWindow::createLocalFolder()
+{
+  bool ok;
+  QString folderName = QInputDialog::getText(this,
+                                             "Skapa Mapp",
+                                             "Mappnamn:",
+                                             QLineEdit::Normal,
+                                             "",
+                                             &ok);
+  if (!ok || folderName.trimmed().isEmpty())
+    return;
+
+  QDir dir(m_localCurrentPath);
+  if (dir.mkdir(folderName.trimmed()))
+  {
+    populateLocalList(m_localCurrentPath);
   }
   else
   {
-    QAction *uploadAction = contextMenu.addAction("Upload file to server");
-    QAction *deleteAction = contextMenu.addAction("Delete");
-
-    QAction *selectedAction = contextMenu.exec(localListWidget->viewport()->mapToGlobal(pos));
-
-    if (selectedAction == uploadAction)
-    {
-      if (!m_ftpCommunicator->isConnected())
-      {
-        QMessageBox::warning(this, "Not Connected", "Connect to the server to upload files.");
-        return;
-      }
-      uploadFile(itemPath);
-    }
-    else if (selectedAction == deleteAction)
-    {
-      QMessageBox::StandardButton reply =
-          QMessageBox::question(this,
-                                "Delete File",
-                                QString("Are you sure you want to delete '%1'?").arg(info.fileName()),
-                                QMessageBox::Yes | QMessageBox::No);
-      if (reply == QMessageBox::Yes)
-      {
-        if (!QFile::remove(itemPath))
-          QMessageBox::critical(this, "Error", QString("Could not delete file: %1").arg(info.fileName()));
-        else
-          populateLocalList(m_localCurrentPath);
-      }
-    }
+    QMessageBox::critical(this, "Error", "Could not create folder.");
   }
 }
 
