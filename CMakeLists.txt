@@ -22,6 +22,8 @@ add_executable(QtFtpClient WIN32
     src/main.cpp
     src/mainwindow.cpp
     src/mainwindow.h
+    src/ftpcommunicator.cpp
+    src/ftpcommunicator.h
     src/resources.qrc
 )
 

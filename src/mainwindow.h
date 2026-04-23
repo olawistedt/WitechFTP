@@ -1,13 +1,9 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include <QAbstractSocket>
-#include <QByteArray>
 #include <QHash>
 #include <QListWidgetItem>
 #include <QMainWindow>
-#include <QQueue>
-#include <QStack>
 #include <QString>
 
 QT_BEGIN_NAMESPACE
@@ -16,11 +12,10 @@ class QPushButton;
 class QSplitter;
 class QListWidget;
 class QListWidgetItem;
-class QTcpSocket;
-class QTextStream;
-class QFile;
 class QTextEdit;
 QT_END_NAMESPACE
+
+class FtpCommunicator;
 
 class MainWindow : public QMainWindow
 {
@@ -37,17 +32,13 @@ private slots:
   void uploadFile(const QString &filePath);
   void downloadFile(const QString &fileName);
 
-  // Control connection slots
-  void onControlConnected();
-  void onControlReadyRead();
-  void onControlDisconnected();
-  void onControlError(QAbstractSocket::SocketError socketError);
+  // FTP communicator signal handlers
+  void onFtpConnected();
+  void onFtpDisconnected();
+  void onFtpConnectionError(const QString &error);
+  void onFtpStatusUpdated(const QString &message);
+  void onFtpDirectoryListReceived();
 
-  // Data connection slots
-  void onDataReadyRead();
-  void onDataConnected();
-  void onDataDisconnected();
-  void onDataError(QAbstractSocket::SocketError socketError);
   void showLocalContextMenu(const QPoint &pos);
   void showRemoteContextMenu(const QPoint &pos);
   void uploadFolder(const QString &localPath);
@@ -59,12 +50,7 @@ private slots:
 private:
   void createUi();
   void logStatus(const QString &message);
-  void sendCommand(const QString &command);
-  void handlePasvResponse(const QString &response);
   void populateLocalList(const QString &path);
-  void recursivelyPopulateUploadQueue(const QString &localPath, const QString &remotePath);
-  void processUploadQueue();
-  void processRemoteDeleteQueue();
 
   // Connection widgets
   QLineEdit *hostLineEdit;
@@ -82,74 +68,12 @@ private:
   // Status log
   QTextEdit *statusLog;
 
-  // FTP
-  QTcpSocket *controlSocket;
-  QTcpSocket *dataSocket;
-  QTextStream *controlStream;
-  QByteArray dataBuffer;
-  bool m_waitingForDataConnection = false;
-  QTimer *m_keepAliveTimer = nullptr;
+  // FTP communicator
+  FtpCommunicator *m_ftpCommunicator;
 
-  enum class FtpCommand
-  {
-    None,
-    Cwd,
-    List,
-    Pwd,
-    Mkd,
-    MkdManual,
-    Stor,
-    Retr,
-    Dele,
-    Rmd,
-    ListForDelete,
-    Size,
-    TypeI
-  };
-  FtpCommand lastCommand = FtpCommand::None;
-  QString pendingPath;
-
-  QString currentPath;
-  QHash<QString, bool> isDirectory;
-  bool m_isConnected = false;
-
-  // Upload feature
-  struct FtpUploadCommand
-  {
-    enum CommandType
-    {
-      CreateDirectory,
-      UploadFile
-    };
-    CommandType type;
-    QString localPath;   // Full path to local file/dir
-    QString remotePath;  // Path on server for creation
-  };
-  QQueue<FtpUploadCommand> m_uploadQueue;
-  QFile *m_fileToUpload = nullptr;
-  QString m_pendingRemotePathForUpload;
-  qint64 m_localFileSizeForVerify = 0;
-  QFile *m_fileToDownload = nullptr;
-  QString m_pendingFileNameForDownload;
-  QString m_remoteFileToDelete;
-  bool m_deleteLocalFile = false;
-
-  struct FtpDeleteCommand
-  {
-    enum CommandType
-    {
-      DeleteFile,
-      DeleteDir
-    };
-    CommandType type;
-    QString path;
-  };
-  QQueue<FtpDeleteCommand> m_remoteDeleteQueue;
-  QStack<QString> m_remoteDirsToList;
-  QStack<QString> m_remoteDirsToDelete;
-  bool m_remoteDeleteInProgress = false;
-  QString m_pendingDeleteListPath;
-  QString m_currentDeleteDir;
+  // UI state
+  QString m_currentRemotePath;
+  QHash<QString, bool> m_remoteIsDirectory;
 };
 
 #endif  // MAINWINDOW_H
