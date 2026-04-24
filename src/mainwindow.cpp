@@ -93,10 +93,10 @@ MainWindow::createUi()
 {
   // This function remains largely the same as it just sets up the UI.
   // --- Title ---
-  QLabel *titleLabel = new QLabel("WitechFTP v1.1");
+  QLabel *titleLabel = new QLabel("WitechFTP v1.0");
   QFont titleFont("Arial", 24, QFont::Bold);
   titleLabel->setFont(titleFont);
-  titleLabel->setAlignment(Qt::AlignLeft);
+  titleLabel->setAlignment(Qt::AlignCenter);
   titleLabel->setStyleSheet("padding: 10px;");
 
   // --- Connection Bar ---
