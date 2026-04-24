@@ -41,10 +41,17 @@ public:
   void deleteRemoteDirectory(const QString &dirName, const QString &currentPath);
   void createRemoteFolder(const QString &folderName, const QString &currentPath);
 
+  struct RemoteFileInfo
+  {
+    bool isDir;
+    QString date;
+    qint64 size;
+  };
+
   // Getters
   QString getCurrentPath() const { return m_currentPath; }
-  bool isDirectory(const QString &name) const { return m_isDirectory.value(name, false); }
-  QHash<QString, bool> getDirectories() const { return m_isDirectory; }
+  bool isDirectory(const QString &name) const { return m_remoteFiles.contains(name) && m_remoteFiles.value(name).isDir; }
+  QHash<QString, RemoteFileInfo> getRemoteFiles() const { return m_remoteFiles; }
 
 signals:
   // Connection signals
@@ -154,7 +161,7 @@ private:
   FtpCommand m_lastCommand;
   QString m_pendingPath;
   QString m_currentPath;
-  QHash<QString, bool> m_isDirectory;
+  QHash<QString, RemoteFileInfo> m_remoteFiles;
 
   // Upload state
   QQueue<FtpUploadCommand> m_uploadQueue;

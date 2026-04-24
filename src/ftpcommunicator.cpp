@@ -458,7 +458,7 @@ FtpCommunicator::onDataDisconnected()
   {
     qDebug() << "Data connection disconnected. Processing list.";
 
-    m_isDirectory.clear();
+    m_remoteFiles.clear();
 
     QString listing(m_dataBuffer);
     QStringList lines = listing.split('\n', Qt::SkipEmptyParts);
@@ -469,12 +469,27 @@ FtpCommunicator::onDataDisconnected()
       if (parts.size() < 9)
         continue;
 
+      // Unix ls -l format:
+      // 0: permissions
+      // 1: links
+      // 2: owner
+      // 3: group
+      // 4: size
+      // 5: month
+      // 6: day
+      // 7: time/year
+      // 8+: name
+
       QString name = parts.sliced(8).join(' ');
       if (name == "." || name == "..")
         continue;
 
-      bool isDir = parts[0].startsWith('d');
-      m_isDirectory[name] = isDir;
+      RemoteFileInfo info;
+      info.isDir = parts[0].startsWith('d');
+      info.size = parts[4].toLongLong();
+      info.date = QString("%1 %2 %3").arg(parts[5], parts[6], parts[7]);
+
+      m_remoteFiles[name] = info;
     }
 
     m_dataBuffer.clear();

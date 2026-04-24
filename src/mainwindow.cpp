@@ -13,8 +13,8 @@
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
-#include <QListWidget>
-#include <QListWidgetItem>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 #include <QMainWindow>
 #include <QMenu>
 #include <QMessageBox>
@@ -150,17 +150,21 @@ MainWindow::createUi()
   QVBoxLayout *localLayout = new QVBoxLayout(localWidget);
   localLayout->setContentsMargins(0, 0, 0, 0);
 
-  localListWidget = new QListWidget(localWidget);
+  localListWidget = new QTreeWidget(localWidget);
+  localListWidget->setHeaderLabels({"Namn", "Datum"});
+  localListWidget->setColumnWidth(0, 200);
   localListWidget->setContextMenuPolicy(Qt::CustomContextMenu);
-  localListWidget->setSpacing(0);
   localListWidget->setIconSize(QSize(16, 16));
+  localListWidget->setRootIsDecorated(false);
   localLayout->addWidget(localListWidget);
 
   // Remote
-  remoteListWidget = new QListWidget(splitter);
+  remoteListWidget = new QTreeWidget(splitter);
+  remoteListWidget->setHeaderLabels({"Namn", "Datum"});
+  remoteListWidget->setColumnWidth(0, 200);
   remoteListWidget->setContextMenuPolicy(Qt::CustomContextMenu);
-  remoteListWidget->setSpacing(0);
   remoteListWidget->setIconSize(QSize(16, 16));
+  remoteListWidget->setRootIsDecorated(false);
 
   splitter->addWidget(localWidget);
   splitter->addWidget(remoteListWidget);
@@ -194,16 +198,16 @@ MainWindow::createUi()
 
   // --- Connections ---
   connect(connectButton, &QPushButton::clicked, this, &MainWindow::connectOrDisconnect);
-  connect(remoteListWidget, &QListWidget::itemDoubleClicked, this, &MainWindow::processItem);
+  connect(remoteListWidget, &QTreeWidget::itemDoubleClicked, this, &MainWindow::processItem);
   connect(localListWidget,
-          &QListWidget::customContextMenuRequested,
+          &QTreeWidget::customContextMenuRequested,
           this,
           &MainWindow::showLocalContextMenu);
   connect(remoteListWidget,
-          &QListWidget::customContextMenuRequested,
+          &QTreeWidget::customContextMenuRequested,
           this,
           &MainWindow::showRemoteContextMenu);
-  connect(localListWidget, &QListWidget::itemDoubleClicked, this, &MainWindow::localItemDoubleClicked);
+  connect(localListWidget, &QTreeWidget::itemDoubleClicked, this, &MainWindow::localItemDoubleClicked);
 
   populateLocalList(localStartPath);
 }
@@ -220,28 +224,30 @@ MainWindow::populateLocalList(const QString &path)
   QDir parent = dir;
   if (parent.cdUp())
   {
-    QListWidgetItem *upItem = new QListWidgetItem("..");
-    upItem->setData(Qt::UserRole, QString(".."));
-    upItem->setIcon(style()->standardIcon(QStyle::SP_DirIcon));
-    localListWidget->addItem(upItem);
+    QTreeWidgetItem *upItem = new QTreeWidgetItem(localListWidget);
+    upItem->setText(0, "..");
+    upItem->setData(0, Qt::UserRole, QString(".."));
+    upItem->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
   }
 
   // Directories first
   for (const QFileInfo &info : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name))
   {
-    QListWidgetItem *item = new QListWidgetItem(info.fileName());
-    item->setData(Qt::UserRole, info.absoluteFilePath());
-    item->setIcon(style()->standardIcon(QStyle::SP_DirIcon));
-    localListWidget->addItem(item);
+    QTreeWidgetItem *item = new QTreeWidgetItem(localListWidget);
+    item->setText(0, info.fileName());
+    item->setText(1, info.lastModified().toString("yyyy-MM-dd HH:mm"));
+    item->setData(0, Qt::UserRole, info.absoluteFilePath());
+    item->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
   }
 
   // Then files
   for (const QFileInfo &info : dir.entryInfoList(QDir::Files, QDir::Name))
   {
-    QListWidgetItem *item = new QListWidgetItem(info.fileName());
-    item->setData(Qt::UserRole, info.absoluteFilePath());
-    item->setIcon(style()->standardIcon(QStyle::SP_FileIcon));
-    localListWidget->addItem(item);
+    QTreeWidgetItem *item = new QTreeWidgetItem(localListWidget);
+    item->setText(0, info.fileName());
+    item->setText(1, info.lastModified().toString("yyyy-MM-dd HH:mm"));
+    item->setData(0, Qt::UserRole, info.absoluteFilePath());
+    item->setIcon(0, style()->standardIcon(QStyle::SP_FileIcon));
   }
 }
 
@@ -325,44 +331,36 @@ MainWindow::onFtpDirectoryListReceived()
 {
   remoteListWidget->clear();
   m_currentRemotePath = m_ftpCommunicator->getCurrentPath();
-  m_remoteIsDirectory = m_ftpCommunicator->getDirectories();
+  m_remoteFiles = m_ftpCommunicator->getRemoteFiles();
 
   // Add ".." to navigate up, unless we are at root
   if (m_currentRemotePath != "/")
   {
-    QListWidgetItem *upItem = new QListWidgetItem("..");
-    upItem->setData(Qt::UserRole, QString(".."));
-    upItem->setIcon(style()->standardIcon(QStyle::SP_DirIcon));
-    remoteListWidget->addItem(upItem);
+    QTreeWidgetItem *upItem = new QTreeWidgetItem(remoteListWidget);
+    upItem->setText(0, "..");
+    upItem->setData(0, Qt::UserRole, QString(".."));
+    upItem->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
   }
 
   // Add all files and directories
-  for (auto it = m_remoteIsDirectory.constBegin(); it != m_remoteIsDirectory.constEnd(); ++it)
+  for (auto it = m_remoteFiles.constBegin(); it != m_remoteFiles.constEnd(); ++it)
   {
     const QString &name = it.key();
-    bool isDir = it.value();
+    const FtpCommunicator::RemoteFileInfo &info = it.value();
 
-    QString displayText;
-    if (isDir)
+    QTreeWidgetItem *item = new QTreeWidgetItem(remoteListWidget);
+    item->setText(0, name);
+    item->setText(1, info.date);
+    item->setData(0, Qt::UserRole, name);
+    
+    if (info.isDir)
     {
-      displayText = name + "    <mapp>";
+      item->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
     }
     else
     {
-      displayText = name;
+      item->setIcon(0, style()->standardIcon(QStyle::SP_FileIcon));
     }
-
-    QListWidgetItem *item = new QListWidgetItem(displayText);
-    item->setData(Qt::UserRole, name);
-    if (isDir)
-    {
-      item->setIcon(style()->standardIcon(QStyle::SP_DirIcon));
-    }
-    else
-    {
-      item->setIcon(style()->standardIcon(QStyle::SP_FileIcon));
-    }
-    remoteListWidget->addItem(item);
   }
 }
 
@@ -396,11 +394,11 @@ MainWindow::onFtpDownloadComplete()
 void
 MainWindow::showLocalContextMenu(const QPoint &pos)
 {
-  QListWidgetItem *item = localListWidget->itemAt(pos);
+  QTreeWidgetItem *item = localListWidget->itemAt(pos);
   QString itemPath;
   if (item)
   {
-    itemPath = item->data(Qt::UserRole).toString();
+    itemPath = item->data(0, Qt::UserRole).toString();
     if (itemPath == "..")
       itemPath.clear();
   }
@@ -507,14 +505,14 @@ MainWindow::showRemoteContextMenu(const QPoint &pos)
   if (!m_ftpCommunicator->isConnected())
     return;
 
-  QListWidgetItem *item = remoteListWidget->itemAt(pos);
+  QTreeWidgetItem *item = remoteListWidget->itemAt(pos);
 
   QString itemName;
   if (item)
   {
-    itemName = item->data(Qt::UserRole).toString();
+    itemName = item->data(0, Qt::UserRole).toString();
     if (itemName.isEmpty())
-      itemName = item->text();
+      itemName = item->text(0);
     if (itemName == "..")
       itemName.clear();
   }
@@ -529,7 +527,7 @@ MainWindow::showRemoteContextMenu(const QPoint &pos)
   if (!itemName.isEmpty())
   {
     contextMenu.addSeparator();
-    if (!m_remoteIsDirectory.value(itemName, false))
+    if (!m_ftpCommunicator->isDirectory(itemName))
     {
       downloadFileAction = contextMenu.addAction("Download file");
       deleteAction = contextMenu.addAction("Ta bort fil");
@@ -626,9 +624,9 @@ MainWindow::uploadFolder(const QString &localPath)
 }
 
 void
-MainWindow::localItemDoubleClicked(QListWidgetItem *item)
+MainWindow::localItemDoubleClicked(QTreeWidgetItem *item)
 {
-  QString itemPath = item->data(Qt::UserRole).toString();
+  QString itemPath = item->data(0, Qt::UserRole).toString();
 
   // Navigate up
   if (itemPath == "..")
@@ -660,16 +658,16 @@ MainWindow::localItemDoubleClicked(QListWidgetItem *item)
 // --- Stubbed Functions ---
 
 void
-MainWindow::processItem(QListWidgetItem *item)
+MainWindow::processItem(QTreeWidgetItem *item)
 {
   if (!m_ftpCommunicator->isConnected())
     return;
 
-  QString name = item->data(Qt::UserRole).toString();
+  QString name = item->data(0, Qt::UserRole).toString();
   if (name.isEmpty())
-    name = item->text();
+    name = item->text(0);
 
-  if (name != ".." && !m_remoteIsDirectory.value(name, false))
+  if (name != ".." && !m_ftpCommunicator->isDirectory(name))
   {
     downloadFile(name);
     return;

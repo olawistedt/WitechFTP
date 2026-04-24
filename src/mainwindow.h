@@ -2,20 +2,19 @@
 #define MAINWINDOW_H
 
 #include <QHash>
-#include <QListWidgetItem>
 #include <QMainWindow>
 #include <QString>
+
+#include "ftpcommunicator.h"
 
 QT_BEGIN_NAMESPACE
 class QLineEdit;
 class QPushButton;
 class QSplitter;
-class QListWidget;
-class QListWidgetItem;
+class QTreeWidget;
+class QTreeWidgetItem;
 class QTextEdit;
 QT_END_NAMESPACE
-
-class FtpCommunicator;
 
 class MainWindow : public QMainWindow
 {
@@ -27,7 +26,7 @@ public:
 
 private slots:
   void connectOrDisconnect();
-  void processItem(QListWidgetItem *item);
+  void processItem(QTreeWidgetItem *item);
   void uploadFile();
   void uploadFile(const QString &filePath);
   void downloadFile(const QString &fileName);
@@ -44,7 +43,7 @@ private slots:
   void showLocalContextMenu(const QPoint &pos);
   void showRemoteContextMenu(const QPoint &pos);
   void uploadFolder(const QString &localPath);
-  void localItemDoubleClicked(QListWidgetItem *item);
+  void localItemDoubleClicked(QTreeWidgetItem *item);
   void deleteRemoteFileConfirmed(const QString &fileName);
   void deleteRemoteDirectoryConfirmed(const QString &dirName);
   void createRemoteFolder();
@@ -63,10 +62,10 @@ private:
 
   // File browsers
   QSplitter *splitter;
-  QListWidget *localListWidget;
+  QTreeWidget *localListWidget;
   QString m_localCurrentPath;
 
-  QListWidget *remoteListWidget;
+  QTreeWidget *remoteListWidget;
 
   // Status log
   QTextEdit *statusLog;
@@ -76,7 +75,7 @@ private:
 
   // UI state
   QString m_currentRemotePath;
-  QHash<QString, bool> m_remoteIsDirectory;
+  QHash<QString, FtpCommunicator::RemoteFileInfo> m_remoteFiles;
 };
 
 #endif  // MAINWINDOW_H
