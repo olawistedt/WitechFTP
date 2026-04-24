@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "ftpcommunicator.h"
 
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
@@ -42,6 +43,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   connect(m_ftpCommunicator, &FtpCommunicator::connectionError, this, &MainWindow::onFtpConnectionError);
   connect(m_ftpCommunicator, &FtpCommunicator::statusUpdated, this, &MainWindow::onFtpStatusUpdated);
   connect(m_ftpCommunicator, &FtpCommunicator::directoryListReceived, this, &MainWindow::onFtpDirectoryListReceived);
+  connect(m_ftpCommunicator, &FtpCommunicator::md5Received, this, &MainWindow::onFtpMd5Received);
   connect(m_ftpCommunicator, &FtpCommunicator::downloadComplete, this, &MainWindow::onFtpDownloadComplete);
 
   createUi();
@@ -151,8 +153,9 @@ MainWindow::createUi()
   localLayout->setContentsMargins(0, 0, 0, 0);
 
   localListWidget = new QTreeWidget(localWidget);
-  localListWidget->setHeaderLabels({"Namn", "Datum"});
+  localListWidget->setHeaderLabels({"Namn", "Datum", "MD5"});
   localListWidget->setColumnWidth(0, 200);
+  localListWidget->setColumnWidth(1, 150);
   localListWidget->setContextMenuPolicy(Qt::CustomContextMenu);
   localListWidget->setIconSize(QSize(16, 16));
   localListWidget->setRootIsDecorated(false);
@@ -160,8 +163,9 @@ MainWindow::createUi()
 
   // Remote
   remoteListWidget = new QTreeWidget(splitter);
-  remoteListWidget->setHeaderLabels({"Namn", "Datum"});
+  remoteListWidget->setHeaderLabels({"Namn", "Datum", "MD5"});
   remoteListWidget->setColumnWidth(0, 200);
+  remoteListWidget->setColumnWidth(1, 150);
   remoteListWidget->setContextMenuPolicy(Qt::CustomContextMenu);
   remoteListWidget->setIconSize(QSize(16, 16));
   remoteListWidget->setRootIsDecorated(false);
@@ -246,6 +250,18 @@ MainWindow::populateLocalList(const QString &path)
     QTreeWidgetItem *item = new QTreeWidgetItem(localListWidget);
     item->setText(0, info.fileName());
     item->setText(1, info.lastModified().toString("yyyy-MM-dd HH:mm"));
+
+    // MD5 calculation for local file
+    QFile file(info.absoluteFilePath());
+    if (file.open(QIODevice::ReadOnly))
+    {
+      QCryptographicHash hash(QCryptographicHash::Md5);
+      if (hash.addData(&file))
+      {
+        item->setText(2, hash.result().toHex());
+      }
+    }
+
     item->setData(0, Qt::UserRole, info.absoluteFilePath());
     item->setIcon(0, style()->standardIcon(QStyle::SP_FileIcon));
   }
@@ -351,6 +367,7 @@ MainWindow::onFtpDirectoryListReceived()
     QTreeWidgetItem *item = new QTreeWidgetItem(remoteListWidget);
     item->setText(0, name);
     item->setText(1, info.date);
+    item->setText(2, info.md5);
     item->setData(0, Qt::UserRole, name);
     
     if (info.isDir)
@@ -360,6 +377,20 @@ MainWindow::onFtpDirectoryListReceived()
     else
     {
       item->setIcon(0, style()->standardIcon(QStyle::SP_FileIcon));
+    }
+  }
+}
+
+void
+MainWindow::onFtpMd5Received(const QString &fileName, const QString &md5)
+{
+  for (int i = 0; i < remoteListWidget->topLevelItemCount(); ++i)
+  {
+    QTreeWidgetItem *item = remoteListWidget->topLevelItem(i);
+    if (item->text(0) == fileName)
+    {
+      item->setText(2, md5);
+      break;
     }
   }
 }

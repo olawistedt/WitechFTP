@@ -38,6 +38,7 @@ private slots:
   void onFtpConnectionError(const QString &error);
   void onFtpStatusUpdated(const QString &message);
   void onFtpDirectoryListReceived();
+  void onFtpMd5Received(const QString &fileName, const QString &md5);
   void onFtpDownloadComplete();
 
   void showLocalContextMenu(const QPoint &pos);

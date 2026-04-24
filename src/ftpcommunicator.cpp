@@ -336,6 +336,33 @@ FtpCommunicator::onControlReadyRead()
         processRemoteDeleteQueue();
       }
     }
+    else if ((responseCode == 251 || responseCode == 200) && m_lastCommand == FtpCommand::Md5)
+    {
+      // Parse MD5 from response. Often format is "251 <hash>" or "200 <hash>"
+      // Some servers use site specific formats.
+      QStringList parts = response.split(' ', Qt::SkipEmptyParts);
+      if (parts.size() >= 2)
+      {
+        QString md5 = parts.last().toLower();
+        // The queue head is the file we just got MD5 for
+        if (!m_md5Queue.isEmpty())
+        {
+          QString fileName = m_md5Queue.dequeue();
+          m_remoteFiles[fileName].md5 = md5;
+          emit md5Received(fileName, md5);
+        }
+      }
+      m_lastCommand = FtpCommand::None;
+      processMd5Queue();
+    }
+    else if (responseCode >= 400 && m_lastCommand == FtpCommand::Md5)
+    {
+      // MD5 command failed or not supported
+      if (!m_md5Queue.isEmpty())
+        m_md5Queue.dequeue();
+      m_lastCommand = FtpCommand::None;
+      processMd5Queue();
+    }
     else if (responseCode == 213 && m_lastCommand == FtpCommand::Size)
     {  // SIZE response: "213 <bytes>"
       qint64 remoteSize = response.mid(4).trimmed().toLongLong();
@@ -469,17 +496,6 @@ FtpCommunicator::onDataDisconnected()
       if (parts.size() < 9)
         continue;
 
-      // Unix ls -l format:
-      // 0: permissions
-      // 1: links
-      // 2: owner
-      // 3: group
-      // 4: size
-      // 5: month
-      // 6: day
-      // 7: time/year
-      // 8+: name
-
       QString name = parts.sliced(8).join(' ');
       if (name == "." || name == "..")
         continue;
@@ -488,13 +504,21 @@ FtpCommunicator::onDataDisconnected()
       info.isDir = parts[0].startsWith('d');
       info.size = parts[4].toLongLong();
       info.date = QString("%1 %2 %3").arg(parts[5], parts[6], parts[7]);
+      info.md5 = ""; // Will be filled by MD5 command if supported
 
       m_remoteFiles[name] = info;
+
+      if (!info.isDir) {
+          m_md5Queue.enqueue(name);
+      }
     }
 
     m_dataBuffer.clear();
     m_lastCommand = FtpCommand::None;
     emit directoryListReceived();
+
+    // Start fetching MD5s
+    QTimer::singleShot(100, this, &FtpCommunicator::processMd5Queue);
     return;
   }
 
@@ -927,6 +951,24 @@ FtpCommunicator::processRemoteDeleteQueue()
   emit deletionComplete();
   m_lastCommand = FtpCommand::List;
   sendCommand("PASV");
+}
+
+void
+FtpCommunicator::processMd5Queue()
+{
+  if (!m_isConnected || m_md5Queue.isEmpty() || m_lastCommand != FtpCommand::None)
+    return;
+
+  QString fileName = m_md5Queue.head();
+  m_lastCommand = FtpCommand::Md5;
+  
+  QString fullPath;
+  if (m_currentPath.endsWith('/'))
+      fullPath = m_currentPath + fileName;
+  else
+      fullPath = m_currentPath + "/" + fileName;
+
+  sendCommand("MD5 " + fullPath);
 }
 
 void

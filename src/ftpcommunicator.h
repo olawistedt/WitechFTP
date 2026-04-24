@@ -46,6 +46,7 @@ public:
     bool isDir;
     QString date;
     qint64 size;
+    QString md5;
   };
 
   // Getters
@@ -72,6 +73,7 @@ signals:
   void downloadComplete();
   void deletionComplete();
   void folderCreated();
+  void md5Received(const QString &fileName, const QString &md5);
 
 private slots:
   // Control connection slots
@@ -87,6 +89,7 @@ private slots:
   void onDataError(QAbstractSocket::SocketError socketError);
 
   void onKeepAliveTimeout();
+  void processMd5Queue();
 
 private:
   enum class FtpCommand
@@ -104,7 +107,8 @@ private:
     ListForDelete,
     ListForDownload,
     Size,
-    TypeI
+    TypeI,
+    Md5
   };
 
   struct FtpUploadCommand
@@ -162,6 +166,7 @@ private:
   QString m_pendingPath;
   QString m_currentPath;
   QHash<QString, RemoteFileInfo> m_remoteFiles;
+  QQueue<QString> m_md5Queue;
 
   // Upload state
   QQueue<FtpUploadCommand> m_uploadQueue;
