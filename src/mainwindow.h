@@ -26,7 +26,7 @@ public:
 
 private slots:
   void connectOrDisconnect();
-  void processItem(QTreeWidgetItem *item);
+  void onRemoteItemClicked(QTreeWidgetItem *item);
   void uploadFile();
   void uploadFile(const QString &filePath);
   void downloadFile(const QString &fileName);
@@ -44,7 +44,7 @@ private slots:
   void showLocalContextMenu(const QPoint &pos);
   void showRemoteContextMenu(const QPoint &pos);
   void uploadFolder(const QString &localPath);
-  void localItemDoubleClicked(QTreeWidgetItem *item);
+  void onLocalItemClicked(QTreeWidgetItem *item);
   void deleteRemoteFileConfirmed(const QString &fileName);
   void deleteRemoteDirectoryConfirmed(const QString &dirName);
   void createRemoteFolder();

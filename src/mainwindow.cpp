@@ -172,8 +172,8 @@ MainWindow::createUi()
 
   splitter->addWidget(localWidget);
   splitter->addWidget(remoteListWidget);
-  splitter->setStretchFactor(0, 3);
-  splitter->setStretchFactor(1, 2);
+  splitter->setStretchFactor(0, 1);
+  splitter->setStretchFactor(1, 1);
 
   // --- Status Log ---
   statusLog = new QTextEdit;
@@ -202,7 +202,7 @@ MainWindow::createUi()
 
   // --- Connections ---
   connect(connectButton, &QPushButton::clicked, this, &MainWindow::connectOrDisconnect);
-  connect(remoteListWidget, &QTreeWidget::itemDoubleClicked, this, &MainWindow::processItem);
+  connect(remoteListWidget, &QTreeWidget::itemClicked, this, &MainWindow::onRemoteItemClicked);
   connect(localListWidget,
           &QTreeWidget::customContextMenuRequested,
           this,
@@ -211,7 +211,7 @@ MainWindow::createUi()
           &QTreeWidget::customContextMenuRequested,
           this,
           &MainWindow::showRemoteContextMenu);
-  connect(localListWidget, &QTreeWidget::itemDoubleClicked, this, &MainWindow::localItemDoubleClicked);
+  connect(localListWidget, &QTreeWidget::itemClicked, this, &MainWindow::onLocalItemClicked);
 
   populateLocalList(localStartPath);
 }
@@ -655,7 +655,7 @@ MainWindow::uploadFolder(const QString &localPath)
 }
 
 void
-MainWindow::localItemDoubleClicked(QTreeWidgetItem *item)
+MainWindow::onLocalItemClicked(QTreeWidgetItem *item)
 {
   QString itemPath = item->data(0, Qt::UserRole).toString();
 
@@ -674,22 +674,10 @@ MainWindow::localItemDoubleClicked(QTreeWidgetItem *item)
     populateLocalList(itemPath);
     return;
   }
-
-  // It's a file — upload it
-  if (!m_ftpCommunicator->isConnected())
-    return;
-
-  QString fileName = info.fileName();
-  QString currentPath = m_ftpCommunicator->getCurrentPath();
-  QString remoteTargetPath = currentPath.endsWith('/') ? currentPath + fileName : currentPath + "/" + fileName;
-
-  m_ftpCommunicator->uploadFile(itemPath, remoteTargetPath);
 }
 
-// --- Stubbed Functions ---
-
 void
-MainWindow::processItem(QTreeWidgetItem *item)
+MainWindow::onRemoteItemClicked(QTreeWidgetItem *item)
 {
   if (!m_ftpCommunicator->isConnected())
     return;
@@ -698,31 +686,33 @@ MainWindow::processItem(QTreeWidgetItem *item)
   if (name.isEmpty())
     name = item->text(0);
 
-  if (name != ".." && !m_ftpCommunicator->isDirectory(name))
-  {
-    downloadFile(name);
-    return;
+  if (name == "..") {
+      // Navigate up
+      QUrl url;
+      QString currentPath = m_ftpCommunicator->getCurrentPath();
+      if (currentPath.endsWith('/') || currentPath.isEmpty())
+          url.setPath(currentPath);
+      else
+          url.setPath(currentPath + '/');
+
+      QUrl newUrl = url.resolved(QUrl(name));
+      m_ftpCommunicator->changeDirectory(newUrl.path());
+      return;
   }
 
-  // It's a directory - navigate to it
-  QUrl url;
-  QString currentPath = m_ftpCommunicator->getCurrentPath();
-  
-  // Ensure currentPath ends with a slash if it's not the root, for correct resolution
-  if (currentPath.endsWith('/') || currentPath.isEmpty())
+  if (m_ftpCommunicator->isDirectory(name))
   {
-    url.setPath(currentPath);
-  }
-  else
-  {
-    url.setPath(currentPath + '/');
-  }
+      // Navigate into directory
+      QUrl url;
+      QString currentPath = m_ftpCommunicator->getCurrentPath();
+      if (currentPath.endsWith('/') || currentPath.isEmpty())
+          url.setPath(currentPath);
+      else
+          url.setPath(currentPath + '/');
 
-  QUrl newUrl = url.resolved(QUrl(name));
-  QString newPath = newUrl.path();
-
-  qDebug() << "CWD to" << newPath;
-  m_ftpCommunicator->changeDirectory(newPath);
+      QUrl newUrl = url.resolved(QUrl(name));
+      m_ftpCommunicator->changeDirectory(newUrl.path());
+  }
 }
 
 void
