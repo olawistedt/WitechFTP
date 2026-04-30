@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(QtFtpClient LANGUAGES CXX)
+project(WitechFTP LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,7 +18,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Lägg till källkodsfiler
-add_executable(QtFtpClient WIN32
+add_executable(WitechFTP WIN32
     src/main.cpp
     src/mainwindow.cpp
     src/mainwindow.h
@@ -28,7 +28,7 @@ add_executable(QtFtpClient WIN32
 )
 
 # Länka mot Qt-moduler
-target_link_libraries(QtFtpClient PRIVATE
+target_link_libraries(WitechFTP PRIVATE
     Qt6::Widgets
     Qt6::Network
 )
