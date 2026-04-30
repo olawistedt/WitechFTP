@@ -1038,7 +1038,11 @@ MainWindow::onSavedSiteSelected(int index)
     passwordLineEdit->setText(siteData["password"].toString());
     
     if (m_ftpCommunicator->isConnected()) {
-      QMessageBox::information(this, "Redan ansluten", "Du är redan ansluten. Klicka på 'Koppla från' och sedan 'Anslut' för att byta sajt.");
+      // Koppla från automatiskt
+      connectOrDisconnect();
+      
+      // Vänta en halv sekund så anslutningen hinner stängas, anslut sedan igen
+      QTimer::singleShot(500, this, &MainWindow::connectOrDisconnect);
     } else {
       // Auto-connect!
       connectOrDisconnect();
