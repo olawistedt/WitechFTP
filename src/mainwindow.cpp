@@ -222,17 +222,25 @@ MainWindow::populateLocalList(const QString &path)
   m_localCurrentPath = path;
   localListWidget->clear();
 
+  if (path.isEmpty())
+  {
+    for (const QFileInfo &drive : QDir::drives())
+    {
+      QTreeWidgetItem *item = new QTreeWidgetItem(localListWidget);
+      item->setText(0, drive.absoluteFilePath());
+      item->setData(0, Qt::UserRole, drive.absoluteFilePath());
+      item->setIcon(0, style()->standardIcon(QStyle::SP_DriveHDIcon));
+    }
+    return;
+  }
+
   QDir dir(path);
 
-  // Add ".." unless already at filesystem root
-  QDir parent = dir;
-  if (parent.cdUp())
-  {
-    QTreeWidgetItem *upItem = new QTreeWidgetItem(localListWidget);
-    upItem->setText(0, "..");
-    upItem->setData(0, Qt::UserRole, QString(".."));
-    upItem->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
-  }
+  // Add ".." to navigate up to parent or drive list
+  QTreeWidgetItem *upItem = new QTreeWidgetItem(localListWidget);
+  upItem->setText(0, "..");
+  upItem->setData(0, Qt::UserRole, QString(".."));
+  upItem->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
 
   // Directories first
   for (const QFileInfo &info : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name))
@@ -251,7 +259,8 @@ MainWindow::populateLocalList(const QString &path)
     item->setText(0, info.fileName());
     item->setText(1, info.lastModified().toString("yyyy-MM-dd HH:mm"));
 
-    // MD5 calculation for local file
+    // MD5 calculation for local file - only for actual files and not too large ones maybe?
+    // For now keep it but it might be slow.
     QFile file(info.absoluteFilePath());
     if (file.open(QIODevice::ReadOnly))
     {
@@ -436,6 +445,9 @@ MainWindow::showLocalContextMenu(const QPoint &pos)
 
   QMenu contextMenu(this);
   QAction *createFolderAction = contextMenu.addAction("Skapa Mapp");
+  if (m_localCurrentPath.isEmpty())
+    createFolderAction->setEnabled(false);
+
   QAction *uploadAction = nullptr;
   QAction *deleteAction = nullptr;
 
@@ -509,6 +521,9 @@ MainWindow::showLocalContextMenu(const QPoint &pos)
 void
 MainWindow::createLocalFolder()
 {
+  if (m_localCurrentPath.isEmpty())
+    return;
+
   bool ok;
   QString folderName = QInputDialog::getText(this,
                                              "Skapa Mapp",
@@ -665,6 +680,8 @@ MainWindow::onLocalItemClicked(QTreeWidgetItem *item)
     QDir dir(m_localCurrentPath);
     if (dir.cdUp())
       populateLocalList(dir.absolutePath());
+    else
+      populateLocalList(""); // Show drives
     return;
   }
 
