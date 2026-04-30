@@ -40,6 +40,8 @@ public:
   void deleteRemoteFile(const QString &fileName, const QString &currentPath);
   void deleteRemoteDirectory(const QString &dirName, const QString &currentPath);
   void createRemoteFolder(const QString &folderName, const QString &currentPath);
+  void renameRemote(const QString &oldName, const QString &newName, const QString &currentPath);
+  void abortTransfer();
 
   struct RemoteFileInfo
   {
@@ -108,7 +110,9 @@ private:
     ListForDownload,
     Size,
     TypeI,
-    Md5
+    Md5,
+    Rnfr,
+    Rnto
   };
 
   struct FtpUploadCommand
@@ -166,6 +170,7 @@ private:
   FtpCommand m_lastCommand;
   QString m_pendingPath;
   QString m_currentPath;
+  QString m_pendingRenameTo;
   QHash<QString, RemoteFileInfo> m_remoteFiles;
   QQueue<QString> m_md5Queue;
 

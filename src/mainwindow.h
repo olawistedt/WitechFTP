@@ -14,6 +14,7 @@ class QSplitter;
 class QTreeWidget;
 class QTreeWidgetItem;
 class QTextEdit;
+class QLabel;
 QT_END_NAMESPACE
 
 class MainWindow : public QMainWindow
@@ -27,7 +28,6 @@ public:
 private slots:
   void connectOrDisconnect();
   void onRemoteItemClicked(QTreeWidgetItem *item);
-  void uploadFile();
   void uploadFile(const QString &filePath);
   void downloadFile(const QString &fileName);
   void downloadFolder(const QString &folderName);
@@ -47,6 +47,7 @@ private slots:
   void onLocalItemClicked(QTreeWidgetItem *item);
   void deleteRemoteFileConfirmed(const QString &fileName);
   void deleteRemoteDirectoryConfirmed(const QString &dirName);
+  void renameRemoteItem(const QString &oldName);
   void createRemoteFolder();
   void createLocalFolder();
 
@@ -60,6 +61,8 @@ private:
   QLineEdit *usernameLineEdit;
   QLineEdit *passwordLineEdit;
   QPushButton *connectButton;
+  QPushButton *stopButton;
+  QLabel *connectionStatusIcon;
 
   // File browsers
   QSplitter *splitter;

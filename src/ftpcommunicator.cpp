@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QRegularExpression>
 #include <QTcpSocket>
 #include <QTextStream>
 #include <QTimer>
@@ -107,7 +108,11 @@ FtpCommunicator::disconnectFromHost()
 void
 FtpCommunicator::sendCommand(const QString &command)
 {
-  qDebug() << "C:" << command;
+  if (command.startsWith("PASS ", Qt::CaseInsensitive))
+    qDebug() << "C: PASS ******";
+  else
+    qDebug() << "C:" << command;
+
   *m_controlStream << command << "\r\n";
   m_controlStream->flush();
 }
@@ -195,6 +200,41 @@ FtpCommunicator::onControlReadyRead()
       qDebug() << "LIST (download) failed:" << response;
       m_lastCommand = FtpCommand::None;
       processDownloadQueue();
+    }
+    else if (responseCode >= 400 && m_lastCommand == FtpCommand::Retr)
+    {
+      qDebug() << "RETR failed:" << response;
+      emit statusUpdated(QString("Nedladdning misslyckades: %1").arg(response));
+      if (m_fileToDownload)
+      {
+        m_fileToDownload->close();
+        delete m_fileToDownload;
+        m_fileToDownload = nullptr;
+      }
+      m_lastCommand = FtpCommand::None;
+      if (m_downloadInProgress)
+        processDownloadQueue();
+      else
+        emit downloadComplete();
+    }
+    else if (responseCode >= 400 && m_lastCommand == FtpCommand::Stor)
+    {
+      qDebug() << "STOR failed:" << response;
+      emit statusUpdated(QString("Uppladdning misslyckades: %1").arg(response));
+      if (m_fileToUpload)
+      {
+        m_fileToUpload->close();
+        delete m_fileToUpload;
+        m_fileToUpload = nullptr;
+      }
+      m_lastCommand = FtpCommand::None;
+      if (!m_uploadQueue.isEmpty())
+      {
+        m_uploadQueue.dequeue();
+        processUploadQueue();
+      }
+      else
+        emit uploadComplete();
     }
     else if (responseCode == 257 && m_lastCommand == FtpCommand::Mkd)
     {  // MKD success (from upload queue)
@@ -326,15 +366,15 @@ FtpCommunicator::onControlReadyRead()
         processRemoteDeleteQueue();
       }
     }
-    else if ((responseCode == 251 || responseCode == 200) && m_lastCommand == FtpCommand::Md5)
+    else if ((responseCode == 251 || responseCode == 200 || responseCode == 213) && m_lastCommand == FtpCommand::Md5)
     {
-      // Parse MD5 from response. Often format is "251 <hash>" or "200 <hash>"
-      // Some servers use site specific formats.
-      QStringList parts = response.split(' ', Qt::SkipEmptyParts);
-      if (parts.size() >= 2)
+      // Parse MD5 from response using a regex to find the 32 character hex string
+      QRegularExpression md5Regex("([a-fA-F0-9]{32})");
+      QRegularExpressionMatch match = md5Regex.match(response);
+
+      if (match.hasMatch())
       {
-        QString md5 = parts.last().toLower();
-        // The queue head is the file we just got MD5 for
+        QString md5 = match.captured(1).toLower();
         if (!m_md5Queue.isEmpty())
         {
           QString fileName = m_md5Queue.dequeue();
@@ -342,6 +382,12 @@ FtpCommunicator::onControlReadyRead()
           emit md5Received(fileName, md5);
         }
       }
+      else
+      {
+        if (!m_md5Queue.isEmpty())
+          m_md5Queue.dequeue();
+      }
+      
       m_lastCommand = FtpCommand::None;
       processMd5Queue();
     }
@@ -352,6 +398,24 @@ FtpCommunicator::onControlReadyRead()
         m_md5Queue.dequeue();
       m_lastCommand = FtpCommand::None;
       processMd5Queue();
+    }
+    else if (responseCode == 350 && m_lastCommand == FtpCommand::Rnfr)
+    {  // RNFR successful, send RNTO
+      m_lastCommand = FtpCommand::Rnto;
+      sendCommand("RNTO " + m_pendingRenameTo);
+    }
+    else if (responseCode == 250 && m_lastCommand == FtpCommand::Rnto)
+    {  // RNTO successful
+      emit statusUpdated("Namnbyte lyckades.");
+      m_pendingRenameTo.clear();
+      m_lastCommand = FtpCommand::List;
+      sendCommand("PASV");
+    }
+    else if (responseCode >= 400 && (m_lastCommand == FtpCommand::Rnfr || m_lastCommand == FtpCommand::Rnto))
+    {
+      emit statusUpdated(QString("Namnbyte misslyckades: %1").arg(response));
+      m_pendingRenameTo.clear();
+      m_lastCommand = FtpCommand::None;
     }
     else if (responseCode == 213 && m_lastCommand == FtpCommand::Size)
     {  // SIZE response: "213 <bytes>"
@@ -406,6 +470,14 @@ FtpCommunicator::onControlDisconnected()
   emit statusUpdated("Frånkopplad från servern.");
   m_isConnected = false;
   m_keepAliveTimer->stop();
+  m_lastCommand = FtpCommand::None;
+  m_md5Queue.clear();
+  m_uploadQueue.clear();
+  m_downloadQueue.clear();
+  m_remoteDeleteQueue.clear();
+  m_remoteDirsToList.clear();
+  m_remoteDirsToDelete.clear();
+  m_remoteDirsToExploreForDownload.clear();
   emit disconnected();
 }
 
@@ -476,6 +548,7 @@ FtpCommunicator::onDataDisconnected()
     qDebug() << "Data connection disconnected. Processing list.";
 
     m_remoteFiles.clear();
+    m_md5Queue.clear();
 
     QString listing(m_dataBuffer);
     QStringList lines = listing.split('\n', Qt::SkipEmptyParts);
@@ -663,6 +736,50 @@ FtpCommunicator::finalizeDownload()
     emit downloadComplete();
     m_lastCommand = FtpCommand::List;
     sendCommand("PASV");
+  }
+}
+
+void
+FtpCommunicator::abortTransfer()
+{
+  qDebug() << "Aborting transfers and clearing queues.";
+  
+  if (m_dataSocket->state() != QAbstractSocket::UnconnectedState)
+  {
+    m_dataSocket->abort();
+  }
+
+  if (m_fileToUpload)
+  {
+    m_fileToUpload->close();
+    delete m_fileToUpload;
+    m_fileToUpload = nullptr;
+  }
+
+  if (m_fileToDownload)
+  {
+    m_fileToDownload->close();
+    delete m_fileToDownload;
+    m_fileToDownload = nullptr;
+  }
+
+  m_uploadQueue.clear();
+  m_downloadQueue.clear();
+  m_downloadInProgress = false;
+  m_remoteDeleteInProgress = false;
+  m_remoteDeleteQueue.clear();
+  m_remoteDirsToList.clear();
+  m_remoteDirsToDelete.clear();
+  m_remoteDirsToExploreForDownload.clear();
+  
+  m_lastCommand = FtpCommand::None;
+  emit statusUpdated("Överföringar avbrutna.");
+  
+  // Refresh listing to be safe
+  if (m_isConnected)
+  {
+      m_lastCommand = FtpCommand::List;
+      sendCommand("PASV");
   }
 }
 
@@ -886,6 +1003,27 @@ FtpCommunicator::createRemoteFolder(const QString &folderName, const QString &cu
 }
 
 void
+FtpCommunicator::renameRemote(const QString &oldName, const QString &newName, const QString &currentPath)
+{
+  QString oldPath;
+  QString newPath;
+  if (currentPath.endsWith('/'))
+  {
+    oldPath = currentPath + oldName;
+    newPath = currentPath + newName;
+  }
+  else
+  {
+    oldPath = currentPath + "/" + oldName;
+    newPath = currentPath + "/" + newName;
+  }
+
+  m_pendingRenameTo = newPath;
+  m_lastCommand = FtpCommand::Rnfr;
+  sendCommand("RNFR " + oldPath);
+}
+
+void
 FtpCommunicator::processUploadQueue()
 {
   if (m_uploadQueue.isEmpty())
@@ -991,13 +1129,8 @@ FtpCommunicator::processMd5Queue()
   QString fileName = m_md5Queue.head();
   m_lastCommand = FtpCommand::Md5;
   
-  QString fullPath;
-  if (m_currentPath.endsWith('/'))
-      fullPath = m_currentPath + fileName;
-  else
-      fullPath = m_currentPath + "/" + fileName;
-
-  sendCommand("MD5 " + fullPath);
+  // Use just the filename as we are in the correct directory
+  sendCommand("MD5 " + fileName);
 }
 
 void
