@@ -25,6 +25,7 @@ add_executable(WitechFTP WIN32
     src/ftpcommunicator.cpp
     src/ftpcommunicator.h
     src/resources.qrc
+    src/appicon.rc
 )
 
 # Länka mot Qt-moduler
