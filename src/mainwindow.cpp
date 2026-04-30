@@ -32,7 +32,8 @@
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QWidget>
-
+#include <QComboBox>
+#include <QVariantMap>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
@@ -106,13 +107,22 @@ MainWindow::createUi()
   titleLabel->setFont(titleFont);
   titleLabel->setAlignment(Qt::AlignCenter);
   
+  QVBoxLayout *rightLayout = new QVBoxLayout;
   QPushButton *clearLogButton = new QPushButton("Rensa logg");
   connect(clearLogButton, &QPushButton::clicked, [this]() { statusLog->clear(); });
+
+  savedSitesComboBox = new QComboBox;
+  savedSitesComboBox->addItem("Sparade sajter...");
+  loadSavedSites();
+  connect(savedSitesComboBox, QOverload<int>::of(&QComboBox::activated), this, &MainWindow::onSavedSiteSelected);
+
+  rightLayout->addWidget(clearLogButton);
+  rightLayout->addWidget(savedSitesComboBox);
 
   titleLayout->addStretch();
   titleLayout->addWidget(titleLabel);
   titleLayout->addStretch();
-  titleLayout->addWidget(clearLogButton);
+  titleLayout->addLayout(rightLayout);
   titleWidget->setStyleSheet("padding: 5px;");
 
   // --- Connection Bar ---
@@ -396,6 +406,7 @@ MainWindow::logStatus(const QString &message)
 void
 MainWindow::onFtpConnected()
 {
+  saveCurrentSite();
   connectButton->setText("Koppla från");
   hostLineEdit->setEnabled(false);
   usernameLineEdit->setEnabled(false);
@@ -924,4 +935,96 @@ MainWindow::downloadFile(const QString &fileName)
   }
 
   m_ftpCommunicator->downloadFile(fileName, localDir);
+}
+
+void
+MainWindow::loadSavedSites()
+{
+  QSettings settings("Witech", "WitechFTP");
+  int size = settings.beginReadArray("SavedSites");
+  for (int i = 0; i < size; ++i) {
+    settings.setArrayIndex(i);
+    QString host = settings.value("host").toString();
+    QString username = settings.value("username").toString();
+    QString password = settings.value("password").toString();
+    
+    QVariantMap siteData;
+    siteData["host"] = host;
+    siteData["username"] = username;
+    siteData["password"] = password;
+    
+    savedSitesComboBox->addItem(QString("%1 (%2)").arg(host, username), siteData);
+  }
+  settings.endArray();
+}
+
+void
+MainWindow::saveCurrentSite()
+{
+  QString currentHost = hostLineEdit->text().trimmed();
+  QString currentUsername = usernameLineEdit->text().trimmed();
+  QString currentPassword = passwordLineEdit->text();
+  
+  if (currentHost.isEmpty()) return;
+
+  QSettings settings("Witech", "WitechFTP");
+  
+  // Read existing
+  QList<QVariantMap> sites;
+  int size = settings.beginReadArray("SavedSites");
+  for (int i = 0; i < size; ++i) {
+    settings.setArrayIndex(i);
+    QVariantMap siteData;
+    siteData["host"] = settings.value("host").toString();
+    siteData["username"] = settings.value("username").toString();
+    siteData["password"] = settings.value("password").toString();
+    sites.append(siteData);
+  }
+  settings.endArray();
+  
+  // Check if it already exists
+  bool exists = false;
+  for (int i = 0; i < sites.size(); ++i) {
+    if (sites[i]["host"].toString() == currentHost && sites[i]["username"].toString() == currentUsername) {
+      // Update password if changed
+      sites[i]["password"] = currentPassword;
+      exists = true;
+      break;
+    }
+  }
+  
+  if (!exists) {
+    QVariantMap newSite;
+    newSite["host"] = currentHost;
+    newSite["username"] = currentUsername;
+    newSite["password"] = currentPassword;
+    sites.append(newSite);
+    
+    // Add to UI combobox as well
+    savedSitesComboBox->addItem(QString("%1 (%2)").arg(currentHost, currentUsername), newSite);
+  }
+  
+  // Save back
+  settings.beginWriteArray("SavedSites");
+  for (int i = 0; i < sites.size(); ++i) {
+    settings.setArrayIndex(i);
+    settings.setValue("host", sites[i]["host"]);
+    settings.setValue("username", sites[i]["username"]);
+    settings.setValue("password", sites[i]["password"]);
+  }
+  settings.endArray();
+}
+
+void
+MainWindow::onSavedSiteSelected(int index)
+{
+  if (index == 0) return; // "Sparade sajter..."
+  
+  QVariant data = savedSitesComboBox->itemData(index);
+  if (data.isValid() && data.typeId() == QMetaType::QVariantMap) {
+    QVariantMap siteData = data.toMap();
+    hostLineEdit->setText(siteData["host"].toString());
+    usernameLineEdit->setText(siteData["username"].toString());
+    passwordLineEdit->setText(siteData["password"].toString());
+  }
 }

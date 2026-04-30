@@ -8,6 +8,7 @@
 #include "ftpcommunicator.h"
 
 QT_BEGIN_NAMESPACE
+class QComboBox;
 class QLineEdit;
 class QPushButton;
 class QSplitter;
@@ -50,13 +51,18 @@ private slots:
   void renameRemoteItem(const QString &oldName);
   void createRemoteFolder();
   void createLocalFolder();
+  
+  void onSavedSiteSelected(int index);
 
 private:
   void createUi();
   void logStatus(const QString &message);
   void populateLocalList(const QString &path);
+  void loadSavedSites();
+  void saveCurrentSite();
 
   // Connection widgets
+  QComboBox *savedSitesComboBox;
   QLineEdit *hostLineEdit;
   QLineEdit *usernameLineEdit;
   QLineEdit *passwordLineEdit;
