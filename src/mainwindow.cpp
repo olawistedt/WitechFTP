@@ -243,7 +243,7 @@ MainWindow::populateLocalList(const QString &path)
   upItem->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
 
   // Directories first
-  for (const QFileInfo &info : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name))
+  for (const QFileInfo &info : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::IgnoreCase))
   {
     QTreeWidgetItem *item = new QTreeWidgetItem(localListWidget);
     item->setText(0, info.fileName());
@@ -253,7 +253,7 @@ MainWindow::populateLocalList(const QString &path)
   }
 
   // Then files
-  for (const QFileInfo &info : dir.entryInfoList(QDir::Files, QDir::Name))
+  for (const QFileInfo &info : dir.entryInfoList(QDir::Files, QDir::Name | QDir::IgnoreCase))
   {
     QTreeWidgetItem *item = new QTreeWidgetItem(localListWidget);
     item->setText(0, info.fileName());
@@ -367,12 +367,22 @@ MainWindow::onFtpDirectoryListReceived()
     upItem->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
   }
 
-  // Add all files and directories
+  // Separate and sort directories and files
+  QStringList dirNames;
+  QStringList fileNames;
   for (auto it = m_remoteFiles.constBegin(); it != m_remoteFiles.constEnd(); ++it)
   {
-    const QString &name = it.key();
-    const FtpCommunicator::RemoteFileInfo &info = it.value();
+    if (it.value().isDir)
+      dirNames.append(it.key());
+    else
+      fileNames.append(it.key());
+  }
 
+  dirNames.sort(Qt::CaseInsensitive);
+  fileNames.sort(Qt::CaseInsensitive);
+
+  auto addItem = [&](const QString &name) {
+    const FtpCommunicator::RemoteFileInfo &info = m_remoteFiles.value(name);
     QTreeWidgetItem *item = new QTreeWidgetItem(remoteListWidget);
     item->setText(0, name);
     item->setText(1, info.date);
@@ -387,6 +397,16 @@ MainWindow::onFtpDirectoryListReceived()
     {
       item->setIcon(0, style()->standardIcon(QStyle::SP_FileIcon));
     }
+  };
+
+  // Add directories first, then files
+  for (const QString &name : dirNames)
+  {
+    addItem(name);
+  }
+  for (const QString &name : fileNames)
+  {
+    addItem(name);
   }
 }
 
