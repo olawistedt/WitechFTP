@@ -25,6 +25,8 @@ FtpCommunicator::FtpCommunicator(QObject *parent)
     , m_localFileSizeForVerify(0)
     , m_fileToDownload(nullptr)
     , m_downloadInProgress(false)
+    , m_control226Received(false)
+    , m_dataDisconnected(false)
     , m_remoteDirToDelete("")
     , m_remoteDeleteInProgress(false)
 {
@@ -252,30 +254,18 @@ FtpCommunicator::onControlReadyRead()
     else if (responseCode == 226)
     {  // Closing data connection.
       if (m_lastCommand == FtpCommand::List || m_lastCommand == FtpCommand::Stor ||
-          m_lastCommand == FtpCommand::Retr || m_lastCommand == FtpCommand::ListForDelete)
+          m_lastCommand == FtpCommand::Retr || m_lastCommand == FtpCommand::ListForDelete ||
+          m_lastCommand == FtpCommand::ListForDownload)
       {
-        qDebug() << "Server has closed data connection.";
-        // The onDataDisconnected slot will handle the parsing
+        qDebug() << "Server has closed data connection (226).";
       }
+
       if (m_lastCommand == FtpCommand::Retr)
       {
-        qDebug() << "File download successful.";
-        if (m_fileToDownload)
+        m_control226Received = true;
+        if (m_dataDisconnected)
         {
-          m_fileToDownload->close();
-          delete m_fileToDownload;
-          m_fileToDownload = nullptr;
-        }
-        m_pendingFileNameForDownload.clear();
-
-        if (m_downloadInProgress)
-        {
-          processDownloadQueue();
-        }
-        else
-        {
-          emit downloadComplete();
-          m_lastCommand = FtpCommand::None;
+          finalizeDownload();
         }
       }
     }
@@ -637,6 +627,43 @@ FtpCommunicator::onDataDisconnected()
     m_lastCommand = FtpCommand::None;
     processDownloadQueue();
   }
+
+  if (m_lastCommand == FtpCommand::Retr)
+  {
+    qDebug() << "Data connection disconnected for RETR.";
+    if (m_fileToDownload)
+    {
+      m_fileToDownload->write(m_dataSocket->readAll());
+      m_fileToDownload->close();
+      delete m_fileToDownload;
+      m_fileToDownload = nullptr;
+    }
+    m_dataDisconnected = true;
+    if (m_control226Received)
+    {
+      finalizeDownload();
+    }
+  }
+}
+
+void
+FtpCommunicator::finalizeDownload()
+{
+  qDebug() << "Finalizing download.";
+  m_pendingFileNameForDownload.clear();
+  m_control226Received = false;
+  m_dataDisconnected = false;
+
+  if (m_downloadInProgress)
+  {
+    processDownloadQueue();
+  }
+  else
+  {
+    emit downloadComplete();
+    m_lastCommand = FtpCommand::List;
+    sendCommand("PASV");
+  }
 }
 
 void
@@ -791,6 +818,8 @@ FtpCommunicator::downloadFile(const QString &fileName, const QString &localDir)
   }
 
   m_pendingFileNameForDownload = remoteFilePath;
+  m_control226Received = false;
+  m_dataDisconnected = false;
 
   // Initiate download via PASV
   m_lastCommand = FtpCommand::Retr;
@@ -1019,6 +1048,8 @@ FtpCommunicator::processDownloadQueue()
         return;
       }
       m_pendingFileNameForDownload = cmd.remotePath;
+      m_control226Received = false;
+      m_dataDisconnected = false;
       m_lastCommand = FtpCommand::Retr;
       sendCommand("PASV");
       return;

@@ -151,6 +151,7 @@ private:
   void processUploadQueue();
   void processDownloadQueue();
   void processRemoteDeleteQueue();
+  void finalizeDownload();
 
   // Sockets and streams
   QTcpSocket *m_controlSocket;
@@ -183,6 +184,8 @@ private:
   QString m_localBaseDirForDownload;
   QString m_baseRemotePathForDownload;
   bool m_downloadInProgress;
+  bool m_control226Received;
+  bool m_dataDisconnected;
 
   // Delete state
   QString m_remoteFileToDelete;
