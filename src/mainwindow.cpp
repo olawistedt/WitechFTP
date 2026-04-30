@@ -989,6 +989,15 @@ MainWindow::saveCurrentSite()
       // Update password if changed
       sites[i]["password"] = currentPassword;
       exists = true;
+      
+      // Update combo box
+      for (int j = 1; j < savedSitesComboBox->count(); ++j) {
+        QVariantMap data = savedSitesComboBox->itemData(j).toMap();
+        if (data["host"].toString() == currentHost && data["username"].toString() == currentUsername) {
+          savedSitesComboBox->setItemData(j, sites[i]);
+          break;
+        }
+      }
       break;
     }
   }
@@ -1021,10 +1030,21 @@ MainWindow::onSavedSiteSelected(int index)
   if (index == 0) return; // "Sparade sajter..."
   
   QVariant data = savedSitesComboBox->itemData(index);
-  if (data.isValid() && data.typeId() == QMetaType::QVariantMap) {
-    QVariantMap siteData = data.toMap();
+  QVariantMap siteData = data.toMap();
+  
+  if (!siteData.isEmpty()) {
     hostLineEdit->setText(siteData["host"].toString());
     usernameLineEdit->setText(siteData["username"].toString());
     passwordLineEdit->setText(siteData["password"].toString());
+    
+    if (m_ftpCommunicator->isConnected()) {
+      QMessageBox::information(this, "Redan ansluten", "Du är redan ansluten. Klicka på 'Koppla från' och sedan 'Anslut' för att byta sajt.");
+    } else {
+      // Auto-connect!
+      connectOrDisconnect();
+    }
   }
+  
+  // Återställ rullgardinsmenyn så den fungerar som en åtgärdsmeny
+  savedSitesComboBox->setCurrentIndex(0);
 }
