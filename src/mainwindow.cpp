@@ -38,6 +38,7 @@
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
   m_ftpCommunicator = new FtpCommunicator(this);
+  m_localWatcher = new QFileSystemWatcher(this);
 
   // Connect FTP communicator signals
   connect(m_ftpCommunicator, &FtpCommunicator::connected, this, &MainWindow::onFtpConnected);
@@ -47,6 +48,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   connect(m_ftpCommunicator, &FtpCommunicator::directoryListReceived, this, &MainWindow::onFtpDirectoryListReceived);
   connect(m_ftpCommunicator, &FtpCommunicator::md5Received, this, &MainWindow::onFtpMd5Received);
   connect(m_ftpCommunicator, &FtpCommunicator::downloadComplete, this, &MainWindow::onFtpDownloadComplete);
+
+  // Connect local watcher
+  connect(m_localWatcher, &QFileSystemWatcher::directoryChanged, this, &MainWindow::onLocalDirectoryChanged);
 
   createUi();
 
@@ -290,6 +294,14 @@ void
 MainWindow::populateLocalList(const QString &path)
 {
   m_localCurrentPath = path;
+
+  // Update watcher to monitor the current directory
+  if (!m_localWatcher->directories().isEmpty())
+    m_localWatcher->removePaths(m_localWatcher->directories());
+  
+  if (!path.isEmpty() && QDir(path).exists())
+    m_localWatcher->addPath(path);
+
   localListWidget->clear();
 
   if (path.isEmpty())
@@ -1051,4 +1063,13 @@ MainWindow::onSavedSiteSelected(int index)
   
   // Återställ rullgardinsmenyn så den fungerar som en åtgärdsmeny
   savedSitesComboBox->setCurrentIndex(0);
+}
+
+void
+MainWindow::onLocalDirectoryChanged(const QString &path)
+{
+  if (path == m_localCurrentPath)
+  {
+    populateLocalList(path);
+  }
 }

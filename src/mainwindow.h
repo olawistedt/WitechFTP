@@ -7,6 +7,8 @@
 
 #include "ftpcommunicator.h"
 
+#include <QFileSystemWatcher>
+
 QT_BEGIN_NAMESPACE
 class QComboBox;
 class QLineEdit;
@@ -53,6 +55,7 @@ private slots:
   void createLocalFolder();
   
   void onSavedSiteSelected(int index);
+  void onLocalDirectoryChanged(const QString &path);
 
 private:
   void createUi();
@@ -74,6 +77,7 @@ private:
   QSplitter *splitter;
   QTreeWidget *localListWidget;
   QString m_localCurrentPath;
+  QFileSystemWatcher *m_localWatcher;
 
   QTreeWidget *remoteListWidget;
 
