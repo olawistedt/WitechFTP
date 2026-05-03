@@ -110,6 +110,8 @@ private:
     ListForDownload,
     Size,
     TypeI,
+    TypeIForRetr,
+    TypeIForStor,
     Md5,
     Rnfr,
     Rnto

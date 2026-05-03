@@ -162,6 +162,16 @@ FtpCommunicator::onControlReadyRead()
       sendCommand("TYPE I");
       m_keepAliveTimer->start();
     }
+    else if (responseCode == 200 && m_lastCommand == FtpCommand::TypeIForRetr)
+    {
+      m_lastCommand = FtpCommand::Retr;
+      sendCommand("PASV");
+    }
+    else if (responseCode == 200 && m_lastCommand == FtpCommand::TypeIForStor)
+    {
+      m_lastCommand = FtpCommand::Stor;
+      sendCommand("PASV");
+    }
     else if (responseCode == 200 && m_lastCommand == FtpCommand::TypeI)
     {  // TYPE I acknowledged
       m_lastCommand = FtpCommand::Pwd;
@@ -208,6 +218,7 @@ FtpCommunicator::onControlReadyRead()
       if (m_fileToDownload)
       {
         m_fileToDownload->close();
+        m_fileToDownload->remove();
         delete m_fileToDownload;
         m_fileToDownload = nullptr;
       }
@@ -550,6 +561,7 @@ FtpCommunicator::onDataDisconnected()
     m_remoteFiles.clear();
     m_md5Queue.clear();
 
+    m_dataBuffer.append(m_dataSocket->readAll());
     QString listing(m_dataBuffer);
     QStringList lines = listing.split('\n', Qt::SkipEmptyParts);
     for (const QString &line : lines)
@@ -597,6 +609,7 @@ FtpCommunicator::onDataDisconnected()
 
   if (m_lastCommand == FtpCommand::ListForDelete)
   {
+    m_dataBuffer.append(m_dataSocket->readAll());
     QString listing(m_dataBuffer);
     QStringList lines = listing.split('\n', Qt::SkipEmptyParts);
 
@@ -637,6 +650,7 @@ FtpCommunicator::onDataDisconnected()
 
   if (m_lastCommand == FtpCommand::ListForDownload)
   {
+    m_dataBuffer.append(m_dataSocket->readAll());
     QString listing(m_dataBuffer);
     QStringList lines = listing.split('\n', Qt::SkipEmptyParts);
 
@@ -660,6 +674,7 @@ FtpCommunicator::onDataDisconnected()
     QString relPath = m_currentExploreDirForDownload;
     if (relPath.startsWith(baseRemotePath)) {
         relPath = relPath.mid(baseRemotePath.length());
+        while (relPath.startsWith('/')) relPath = relPath.mid(1);
     }
     
     QString localDirPath = QDir(m_localBaseDirForDownload).filePath(relPath);
@@ -1062,7 +1077,8 @@ FtpCommunicator::processUploadQueue()
     emit statusUpdated(QString("Förbereder uppladdning: %1 → %2").arg(command.localPath, command.remotePath));
     m_pendingRemotePathForUpload = command.remotePath;
     m_localFileSizeForVerify = m_fileToUpload->size();
-    sendCommand("PASV");
+    m_lastCommand = FtpCommand::TypeIForStor;
+    sendCommand("TYPE I");
   }
 }
 
@@ -1183,8 +1199,8 @@ FtpCommunicator::processDownloadQueue()
       m_pendingFileNameForDownload = cmd.remotePath;
       m_control226Received = false;
       m_dataDisconnected = false;
-      m_lastCommand = FtpCommand::Retr;
-      sendCommand("PASV");
+      m_lastCommand = FtpCommand::TypeIForRetr;
+      sendCommand("TYPE I");
       return;
     }
   }
