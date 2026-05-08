@@ -5,6 +5,7 @@
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
+#include <QDrag>
 #include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
@@ -14,11 +15,10 @@
 #include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
-#include <QTreeWidget>
-#include <QTreeWidgetItem>
 #include <QMainWindow>
 #include <QMenu>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QProcessEnvironment>
 #include <QPushButton>
 #include <QScreen>
@@ -26,14 +26,89 @@
 #include <QShortcut>
 #include <QSplitter>
 #include <QStyle>
+#include <QTextEdit>
 #include <QTextStream>
 #include <QTimer>
-#include <QTextEdit>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QWidget>
 #include <QComboBox>
 #include <QVariantMap>
+
+void
+DropEnabledTreeWidget::dragEnterEvent(QDragEnterEvent *event)
+{
+  if (event->source() == this)
+  {
+    event->ignore();
+    return;
+  }
+
+  if (event->mimeData()->hasUrls() || event->mimeData()->hasText())
+  {
+    event->acceptProposedAction();
+  }
+  else
+  {
+    event->ignore();
+  }
+}
+
+void
+DropEnabledTreeWidget::dragMoveEvent(QDragMoveEvent *event)
+{
+  event->acceptProposedAction();
+}
+
+void
+DropEnabledTreeWidget::dropEvent(QDropEvent *event)
+{
+  if (event->source() == this)
+  {
+    event->ignore();
+    return;
+  }
+
+  QTreeWidgetItem *targetItem = itemAt(event->pos());
+  emit itemDropped(event->mimeData(), targetItem);
+  event->acceptProposedAction();
+}
+
+void
+DropEnabledTreeWidget::startDrag(Qt::DropActions /*supportedActions*/)
+{
+  QTreeWidgetItem *item = currentItem();
+  if (!item)
+  {
+    return;
+  }
+
+  QString itemPath = item->data(0, Qt::UserRole).toString();
+  if (itemPath == "..")
+  {
+    return;
+  }
+
+  QMimeData *mimeData = new QMimeData;
+
+  // Check if we are the local or remote widget
+  if (this->objectName() == "localListWidget")
+  {
+    QList<QUrl> urls;
+    urls.append(QUrl::fromLocalFile(itemPath));
+    mimeData->setUrls(urls);
+  }
+  else
+  {  // remoteListWidget
+    mimeData->setText(item->text(0));  // The item name
+  }
+
+  QDrag *drag = new QDrag(this);
+  drag->setMimeData(mimeData);
+  drag->exec(Qt::CopyAction);
+}
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
@@ -42,15 +117,33 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
   // Connect FTP communicator signals
   connect(m_ftpCommunicator, &FtpCommunicator::connected, this, &MainWindow::onFtpConnected);
-  connect(m_ftpCommunicator, &FtpCommunicator::disconnected, this, &MainWindow::onFtpDisconnected);
-  connect(m_ftpCommunicator, &FtpCommunicator::connectionError, this, &MainWindow::onFtpConnectionError);
-  connect(m_ftpCommunicator, &FtpCommunicator::statusUpdated, this, &MainWindow::onFtpStatusUpdated);
-  connect(m_ftpCommunicator, &FtpCommunicator::directoryListReceived, this, &MainWindow::onFtpDirectoryListReceived);
+  connect(m_ftpCommunicator,
+          &FtpCommunicator::disconnected,
+          this,
+          &MainWindow::onFtpDisconnected);
+  connect(m_ftpCommunicator,
+          &FtpCommunicator::connectionError,
+          this,
+          &MainWindow::onFtpConnectionError);
+  connect(m_ftpCommunicator,
+          &FtpCommunicator::statusUpdated,
+          this,
+          &MainWindow::onFtpStatusUpdated);
+  connect(m_ftpCommunicator,
+          &FtpCommunicator::directoryListReceived,
+          this,
+          &MainWindow::onFtpDirectoryListReceived);
   connect(m_ftpCommunicator, &FtpCommunicator::md5Received, this, &MainWindow::onFtpMd5Received);
-  connect(m_ftpCommunicator, &FtpCommunicator::downloadComplete, this, &MainWindow::onFtpDownloadComplete);
+  connect(m_ftpCommunicator,
+          &FtpCommunicator::downloadComplete,
+          this,
+          &MainWindow::onFtpDownloadComplete);
 
   // Connect local watcher
-  connect(m_localWatcher, &QFileSystemWatcher::directoryChanged, this, &MainWindow::onLocalDirectoryChanged);
+  connect(m_localWatcher,
+          &QFileSystemWatcher::directoryChanged,
+          this,
+          &MainWindow::onLocalDirectoryChanged);
 
   createUi();
 
@@ -105,20 +198,25 @@ MainWindow::createUi()
   // --- Title ---
   QWidget *titleWidget = new QWidget;
   QHBoxLayout *titleLayout = new QHBoxLayout(titleWidget);
-  
+
   QLabel *titleLabel = new QLabel("WitechFTP v1.2");
   QFont titleFont("Arial", 24, QFont::Bold);
   titleLabel->setFont(titleFont);
   titleLabel->setAlignment(Qt::AlignCenter);
-  
+
   QVBoxLayout *rightLayout = new QVBoxLayout;
   QPushButton *clearLogButton = new QPushButton("Rensa logg");
-  connect(clearLogButton, &QPushButton::clicked, [this]() { statusLog->clear(); });
+  connect(clearLogButton, &QPushButton::clicked, [this]() {
+    statusLog->clear();
+  });
 
   savedSitesComboBox = new QComboBox;
   savedSitesComboBox->addItem("Sparade sajter...");
   loadSavedSites();
-  connect(savedSitesComboBox, QOverload<int>::of(&QComboBox::activated), this, &MainWindow::onSavedSiteSelected);
+  connect(savedSitesComboBox,
+          QOverload<int>::of(&QComboBox::activated),
+          this,
+          &MainWindow::onSavedSiteSelected);
 
   rightLayout->addWidget(clearLogButton);
   rightLayout->addWidget(savedSitesComboBox);
@@ -132,8 +230,8 @@ MainWindow::createUi()
   // --- Connection Bar ---
   QWidget *connectionWidget = new QWidget;
   QHBoxLayout *connectionLayout = new QHBoxLayout(connectionWidget);
-  
-  connectionStatusIcon = new QLabel("🔴"); // Disconnected by default
+
+  connectionStatusIcon = new QLabel("🔴");  // Disconnected by default
   connectionStatusIcon->setToolTip("Frånkopplad");
 
   hostLineEdit = new QLineEdit;
@@ -191,8 +289,14 @@ MainWindow::createUi()
   QVBoxLayout *localLayout = new QVBoxLayout(localWidget);
   localLayout->setContentsMargins(0, 0, 0, 0);
 
-  localListWidget = new QTreeWidget(localWidget);
-  localListWidget->setHeaderLabels({"Namn", "Storlek", "Datum", "MD5"});
+  localListWidget = new DropEnabledTreeWidget(localWidget);
+  localListWidget->setObjectName("localListWidget");
+  localListWidget->setDragEnabled(true);
+  localListWidget->setAcceptDrops(true);
+  localListWidget->setDropIndicatorShown(true);
+  localListWidget->setDragDropMode(QAbstractItemView::DragDrop);
+  localListWidget->setDefaultDropAction(Qt::CopyAction);
+  localListWidget->setHeaderLabels({ "Namn", "Storlek", "Datum", "MD5" });
   localListWidget->setColumnWidth(0, 200);
   localListWidget->setColumnWidth(1, 80);
   localListWidget->setColumnWidth(2, 150);
@@ -203,8 +307,14 @@ MainWindow::createUi()
   localLayout->addWidget(localListWidget);
 
   // Remote
-  remoteListWidget = new QTreeWidget(splitter);
-  remoteListWidget->setHeaderLabels({"Namn", "Storlek", "Datum", "MD5"});
+  remoteListWidget = new DropEnabledTreeWidget(splitter);
+  remoteListWidget->setObjectName("remoteListWidget");
+  remoteListWidget->setDragEnabled(true);
+  remoteListWidget->setAcceptDrops(true);
+  remoteListWidget->setDropIndicatorShown(true);
+  remoteListWidget->setDragDropMode(QAbstractItemView::DragDrop);
+  remoteListWidget->setDefaultDropAction(Qt::CopyAction);
+  remoteListWidget->setHeaderLabels({ "Namn", "Storlek", "Datum", "MD5" });
   remoteListWidget->setColumnWidth(0, 200);
   remoteListWidget->setColumnWidth(1, 80);
   remoteListWidget->setColumnWidth(2, 150);
@@ -245,7 +355,10 @@ MainWindow::createUi()
 
   // --- Connections ---
   connect(connectButton, &QPushButton::clicked, this, &MainWindow::connectOrDisconnect);
-  connect(remoteListWidget, &QTreeWidget::itemActivated, this, &MainWindow::onRemoteItemClicked);
+  connect(remoteListWidget,
+          &QTreeWidget::itemActivated,
+          this,
+          &MainWindow::onRemoteItemClicked);
   connect(localListWidget,
           &QTreeWidget::customContextMenuRequested,
           this,
@@ -256,22 +369,33 @@ MainWindow::createUi()
           &MainWindow::showRemoteContextMenu);
   connect(localListWidget, &QTreeWidget::itemActivated, this, &MainWindow::onLocalItemClicked);
 
+  connect(localListWidget,
+          &DropEnabledTreeWidget::itemDropped,
+          this,
+          &MainWindow::onDropOnLocal);
+  connect(remoteListWidget,
+          &DropEnabledTreeWidget::itemDropped,
+          this,
+          &MainWindow::onDropOnRemote);
+
   // Keyboard support for Delete
   QShortcut *localDeleteShortcut = new QShortcut(QKeySequence::Delete, localListWidget);
   connect(localDeleteShortcut, &QShortcut::activated, [this]() {
     QTreeWidgetItem *item = localListWidget->currentItem();
-    if (item) {
-        // Trigger deletion logic (simplified for this example)
-        // In a real app, we'd refactor the context menu logic into helper methods
-        showLocalContextMenu(localListWidget->visualItemRect(item).center());
+    if (item)
+    {
+      // Trigger deletion logic (simplified for this example)
+      // In a real app, we'd refactor the context menu logic into helper methods
+      showLocalContextMenu(localListWidget->visualItemRect(item).center());
     }
   });
 
   QShortcut *remoteDeleteShortcut = new QShortcut(QKeySequence::Delete, remoteListWidget);
   connect(remoteDeleteShortcut, &QShortcut::activated, [this]() {
     QTreeWidgetItem *item = remoteListWidget->currentItem();
-    if (item) {
-        showRemoteContextMenu(remoteListWidget->visualItemRect(item).center());
+    if (item)
+    {
+      showRemoteContextMenu(remoteListWidget->visualItemRect(item).center());
     }
   });
 
@@ -284,27 +408,29 @@ MainWindow::createUi()
   QShortcut *remoteRefreshShortcut = new QShortcut(QKeySequence("F5"), remoteListWidget);
   connect(remoteRefreshShortcut, &QShortcut::activated, [this]() {
     if (m_ftpCommunicator->isConnected())
-        m_ftpCommunicator->listRemoteDirectory(m_ftpCommunicator->getCurrentPath());
+      m_ftpCommunicator->listRemoteDirectory(m_ftpCommunicator->getCurrentPath());
   });
 
   // Keyboard support for Rename (F2)
   QShortcut *localRenameShortcut = new QShortcut(QKeySequence("F2"), localListWidget);
   connect(localRenameShortcut, &QShortcut::activated, [this]() {
     QTreeWidgetItem *item = localListWidget->currentItem();
-    if (item) {
-        QString itemPath = item->data(0, Qt::UserRole).toString();
-        if (itemPath != ".." && !itemPath.isEmpty())
-            renameLocalItem(itemPath);
+    if (item)
+    {
+      QString itemPath = item->data(0, Qt::UserRole).toString();
+      if (itemPath != ".." && !itemPath.isEmpty())
+        renameLocalItem(itemPath);
     }
   });
 
   QShortcut *remoteRenameShortcut = new QShortcut(QKeySequence("F2"), remoteListWidget);
   connect(remoteRenameShortcut, &QShortcut::activated, [this]() {
     QTreeWidgetItem *item = remoteListWidget->currentItem();
-    if (item && m_ftpCommunicator->isConnected()) {
-        QString itemName = item->data(0, Qt::UserRole).toString();
-        if (itemName != ".." && !itemName.isEmpty())
-            renameRemoteItem(itemName);
+    if (item && m_ftpCommunicator->isConnected())
+    {
+      QString itemName = item->data(0, Qt::UserRole).toString();
+      if (itemName != ".." && !itemName.isEmpty())
+        renameRemoteItem(itemName);
     }
   });
 
@@ -319,7 +445,7 @@ MainWindow::populateLocalList(const QString &path)
   // Update watcher to monitor the current directory
   if (!m_localWatcher->directories().isEmpty())
     m_localWatcher->removePaths(m_localWatcher->directories());
-  
+
   if (!path.isEmpty() && QDir(path).exists())
     m_localWatcher->addPath(path);
 
@@ -346,13 +472,16 @@ MainWindow::populateLocalList(const QString &path)
   upItem->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
 
   auto formatSize = [](qint64 bytes) {
-    if (bytes < 1024) return QString("%1 B").arg(bytes);
-    if (bytes < 1024 * 1024) return QString("%1 KB").arg(bytes / 1024);
+    if (bytes < 1024)
+      return QString("%1 B").arg(bytes);
+    if (bytes < 1024 * 1024)
+      return QString("%1 KB").arg(bytes / 1024);
     return QString("%1 MB").arg(bytes / (1024 * 1024));
   };
 
   // Directories first
-  for (const QFileInfo &info : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::IgnoreCase))
+  for (const QFileInfo &info :
+       dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::IgnoreCase))
   {
     QTreeWidgetItem *item = new QTreeWidgetItem(localListWidget);
     item->setText(0, info.fileName());
@@ -372,19 +501,19 @@ MainWindow::populateLocalList(const QString &path)
     // MD5 calculation for local file - skip if > 10MB to avoid UI hang
     if (info.size() < 10 * 1024 * 1024)
     {
-        QFile file(info.absoluteFilePath());
-        if (file.open(QIODevice::ReadOnly))
+      QFile file(info.absoluteFilePath());
+      if (file.open(QIODevice::ReadOnly))
+      {
+        QCryptographicHash hash(QCryptographicHash::Md5);
+        if (hash.addData(&file))
         {
-          QCryptographicHash hash(QCryptographicHash::Md5);
-          if (hash.addData(&file))
-          {
-            item->setText(3, hash.result().toHex());
-          }
+          item->setText(3, hash.result().toHex());
         }
+      }
     }
     else
     {
-        item->setText(3, "(För stor)");
+      item->setText(3, "(För stor)");
     }
 
     item->setData(0, Qt::UserRole, info.absoluteFilePath());
@@ -420,7 +549,9 @@ MainWindow::connectOrDisconnect()
   }
 
   logStatus(QString("Ansluter till %1:21...").arg(hostLineEdit->text()));
-  m_ftpCommunicator->connectToHost(hostLineEdit->text(), usernameLineEdit->text(), password);
+  m_ftpCommunicator->connectToHost(hostLineEdit->text(),
+                                   usernameLineEdit->text(),
+                                   password);
   connectButton->setText("Connecting...");
   hostLineEdit->setEnabled(false);
   usernameLineEdit->setEnabled(false);
@@ -505,8 +636,10 @@ MainWindow::onFtpDirectoryListReceived()
   fileNames.sort(Qt::CaseInsensitive);
 
   auto formatSize = [](qint64 bytes) {
-    if (bytes < 1024) return QString("%1 B").arg(bytes);
-    if (bytes < 1024 * 1024) return QString("%1 KB").arg(bytes / 1024);
+    if (bytes < 1024)
+      return QString("%1 B").arg(bytes);
+    if (bytes < 1024 * 1024)
+      return QString("%1 KB").arg(bytes / 1024);
     return QString("%1 MB").arg(bytes / (1024 * 1024));
   };
 
@@ -515,11 +648,11 @@ MainWindow::onFtpDirectoryListReceived()
     QTreeWidgetItem *item = new QTreeWidgetItem(remoteListWidget);
     item->setText(0, name);
     if (!info.isDir)
-        item->setText(1, formatSize(info.size));
+      item->setText(1, formatSize(info.size));
     item->setText(2, info.date);
     item->setText(3, info.md5);
     item->setData(0, Qt::UserRole, name);
-    
+
     if (info.isDir)
     {
       item->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
@@ -570,7 +703,7 @@ MainWindow::downloadFolder(const QString &folderName)
   QString localDir = m_localCurrentPath.isEmpty() ? QDir::currentPath() : m_localCurrentPath;
 
   // We should ideally check if the local folder exists, but let's let mkpath handle it.
-  
+
   m_ftpCommunicator->downloadFolder(folderName, localDir);
 }
 
@@ -585,7 +718,6 @@ MainWindow::onFtpDownloadComplete()
 // The following methods have been moved to FtpCommunicator and are no longer needed:
 // onControlConnected(), onControlReadyRead(), onControlDisconnected(), onControlError()
 // onDataReadyRead(), onDataConnected(), onDataDisconnected(), onDataError()
-
 
 void
 MainWindow::showLocalContextMenu(const QPoint &pos)
@@ -626,7 +758,8 @@ MainWindow::showLocalContextMenu(const QPoint &pos)
     }
   }
 
-  QAction *selectedAction = contextMenu.exec(localListWidget->viewport()->mapToGlobal(pos));
+  QAction *selectedAction =
+      contextMenu.exec(localListWidget->viewport()->mapToGlobal(pos));
   if (!selectedAction)
     return;
 
@@ -646,7 +779,9 @@ MainWindow::showLocalContextMenu(const QPoint &pos)
   {
     if (!m_ftpCommunicator->isConnected())
     {
-      QMessageBox::warning(this, "Ej ansluten", "Anslut till servern för att ladda upp.");
+      QMessageBox::warning(this,
+                           "Ej ansluten",
+                           "Anslut till servern för att ladda upp.");
       return;
     }
     QFileInfo info(itemPath);
@@ -659,11 +794,14 @@ MainWindow::showLocalContextMenu(const QPoint &pos)
   {
     QFileInfo info(itemPath);
     QString typeStr = info.isDir() ? "mappen" : "filen";
-    QMessageBox::StandardButton reply =
-        QMessageBox::question(this,
-                              QString("Ta bort %1").arg(info.isDir() ? "mapp" : "fil"),
-                              QString("Är du säker på att du vill ta bort %1 '%2'?").arg(typeStr, info.fileName()),
-                              QMessageBox::Yes | QMessageBox::No);
+    QMessageBox::StandardButton reply = QMessageBox::question(this,
+                                                              QString("Ta bort %1").arg(
+                                                                  info.isDir() ? "mapp" : "fil"),
+                                                              QString("Är du säker på att du "
+                                                                      "vill ta bort %1 '%2'?")
+                                                                  .arg(typeStr, info.fileName()),
+                                                              QMessageBox::Yes |
+                                                                  QMessageBox::No);
     if (reply == QMessageBox::Yes)
     {
       bool success = false;
@@ -678,7 +816,10 @@ MainWindow::showLocalContextMenu(const QPoint &pos)
       }
 
       if (!success)
-        QMessageBox::critical(this, "Fel", QString("Kunde inte ta bort %1: %2").arg(typeStr, info.fileName()));
+        QMessageBox::critical(this,
+                              "Fel",
+                              QString("Kunde inte ta bort %1: %2")
+                                  .arg(typeStr, info.fileName()));
       else
         populateLocalList(m_localCurrentPath);
     }
@@ -732,7 +873,9 @@ MainWindow::renameLocalItem(const QString &oldPath)
 
   if (QFile::exists(newPath))
   {
-    QMessageBox::warning(this, "Filen finns redan", "En fil eller mapp med det namnet finns redan.");
+    QMessageBox::warning(this,
+                         "Filen finns redan",
+                         "En fil eller mapp med det namnet finns redan.");
     return;
   }
 
@@ -789,7 +932,8 @@ MainWindow::showRemoteContextMenu(const QPoint &pos)
     }
   }
 
-  QAction *selectedAction = contextMenu.exec(remoteListWidget->viewport()->mapToGlobal(pos));
+  QAction *selectedAction =
+      contextMenu.exec(remoteListWidget->viewport()->mapToGlobal(pos));
   if (!selectedAction)
     return;
 
@@ -818,18 +962,22 @@ MainWindow::showRemoteContextMenu(const QPoint &pos)
     QMessageBox::StandardButton reply =
         QMessageBox::question(this,
                               "Ta bort fil",
-                              QString("Är du säker på att du vill ta bort filen '%1'?").arg(itemName),
+                              QString("Är du säker på att du vill ta bort filen '%1'?")
+                                  .arg(itemName),
                               QMessageBox::Yes | QMessageBox::No);
     if (reply == QMessageBox::Yes)
       deleteRemoteFileConfirmed(itemName);
   }
   else if (selectedAction == deleteFolderAction)
   {
-    QMessageBox::StandardButton reply =
-        QMessageBox::question(this,
-                              "Ta bort mapp",
-                              QString("Är du säker på att du vill ta bort mappen '%1'?").arg(itemName),
-                              QMessageBox::Yes | QMessageBox::No);
+    QMessageBox::StandardButton reply = QMessageBox::question(this,
+                                                              "Ta bort mapp",
+                                                              QString("Är du säker på att "
+                                                                      "du vill ta bort "
+                                                                      "mappen '%1'?")
+                                                                  .arg(itemName),
+                                                              QMessageBox::Yes |
+                                                                  QMessageBox::No);
     if (reply == QMessageBox::Yes)
       deleteRemoteDirectoryConfirmed(itemName);
   }
@@ -857,7 +1005,8 @@ MainWindow::createRemoteFolder()
   if (!ok || folderName.trimmed().isEmpty())
     return;
 
-  m_ftpCommunicator->createRemoteFolder(folderName.trimmed(), m_ftpCommunicator->getCurrentPath());
+  m_ftpCommunicator->createRemoteFolder(folderName.trimmed(),
+                                        m_ftpCommunicator->getCurrentPath());
 }
 
 void
@@ -876,7 +1025,9 @@ MainWindow::renameRemoteItem(const QString &oldName)
   if (!ok || newName.trimmed().isEmpty() || newName == oldName)
     return;
 
-  m_ftpCommunicator->renameRemote(oldName, newName.trimmed(), m_ftpCommunicator->getCurrentPath());
+  m_ftpCommunicator->renameRemote(oldName,
+                                  newName.trimmed(),
+                                  m_ftpCommunicator->getCurrentPath());
 }
 
 void
@@ -893,7 +1044,9 @@ MainWindow::uploadFolder(const QString &localPath)
 {
   if (!m_ftpCommunicator->isConnected())
   {
-    QMessageBox::warning(this, "Not Connected", "Connect to the server to upload folders.");
+    QMessageBox::warning(this,
+                         "Not Connected",
+                         "Connect to the server to upload folders.");
     return;
   }
 
@@ -912,7 +1065,7 @@ MainWindow::onLocalItemClicked(QTreeWidgetItem *item)
     if (dir.cdUp())
       populateLocalList(dir.absolutePath());
     else
-      populateLocalList(""); // Show drives
+      populateLocalList("");  // Show drives
     return;
   }
 
@@ -934,32 +1087,33 @@ MainWindow::onRemoteItemClicked(QTreeWidgetItem *item)
   if (name.isEmpty())
     name = item->text(0);
 
-  if (name == "..") {
-      // Navigate up
-      QUrl url;
-      QString currentPath = m_ftpCommunicator->getCurrentPath();
-      if (currentPath.endsWith('/') || currentPath.isEmpty())
-          url.setPath(currentPath);
-      else
-          url.setPath(currentPath + '/');
+  if (name == "..")
+  {
+    // Navigate up
+    QUrl url;
+    QString currentPath = m_ftpCommunicator->getCurrentPath();
+    if (currentPath.endsWith('/') || currentPath.isEmpty())
+      url.setPath(currentPath);
+    else
+      url.setPath(currentPath + '/');
 
-      QUrl newUrl = url.resolved(QUrl(name));
-      m_ftpCommunicator->changeDirectory(newUrl.path());
-      return;
+    QUrl newUrl = url.resolved(QUrl(name));
+    m_ftpCommunicator->changeDirectory(newUrl.path());
+    return;
   }
 
   if (m_ftpCommunicator->isDirectory(name))
   {
-      // Navigate into directory
-      QUrl url;
-      QString currentPath = m_ftpCommunicator->getCurrentPath();
-      if (currentPath.endsWith('/') || currentPath.isEmpty())
-          url.setPath(currentPath);
-      else
-          url.setPath(currentPath + '/');
+    // Navigate into directory
+    QUrl url;
+    QString currentPath = m_ftpCommunicator->getCurrentPath();
+    if (currentPath.endsWith('/') || currentPath.isEmpty())
+      url.setPath(currentPath);
+    else
+      url.setPath(currentPath + '/');
 
-      QUrl newUrl = url.resolved(QUrl(name));
-      m_ftpCommunicator->changeDirectory(newUrl.path());
+    QUrl newUrl = url.resolved(QUrl(name));
+    m_ftpCommunicator->changeDirectory(newUrl.path());
   }
 }
 
@@ -980,7 +1134,7 @@ MainWindow::uploadFile(const QString &filePath)
   QString currentPath = m_ftpCommunicator->getCurrentPath();
   QString remotePath = currentPath.endsWith('/') ? currentPath : currentPath + "/";
   remotePath += fileInfo.fileName();
-  
+
   m_ftpCommunicator->uploadFile(filePath, remotePath);
 }
 
@@ -1015,17 +1169,18 @@ MainWindow::loadSavedSites()
 {
   QSettings settings("Witech", "WitechFTP");
   int size = settings.beginReadArray("SavedSites");
-  for (int i = 0; i < size; ++i) {
+  for (int i = 0; i < size; ++i)
+  {
     settings.setArrayIndex(i);
     QString host = settings.value("host").toString();
     QString username = settings.value("username").toString();
     QString password = settings.value("password").toString();
-    
+
     QVariantMap siteData;
     siteData["host"] = host;
     siteData["username"] = username;
     siteData["password"] = password;
-    
+
     savedSitesComboBox->addItem(QString("%1 (%2)").arg(host, username), siteData);
   }
   settings.endArray();
@@ -1037,15 +1192,17 @@ MainWindow::saveCurrentSite()
   QString currentHost = hostLineEdit->text().trimmed();
   QString currentUsername = usernameLineEdit->text().trimmed();
   QString currentPassword = passwordLineEdit->text();
-  
-  if (currentHost.isEmpty()) return;
+
+  if (currentHost.isEmpty())
+    return;
 
   QSettings settings("Witech", "WitechFTP");
-  
+
   // Read existing
   QList<QVariantMap> sites;
   int size = settings.beginReadArray("SavedSites");
-  for (int i = 0; i < size; ++i) {
+  for (int i = 0; i < size; ++i)
+  {
     settings.setArrayIndex(i);
     QVariantMap siteData;
     siteData["host"] = settings.value("host").toString();
@@ -1054,19 +1211,25 @@ MainWindow::saveCurrentSite()
     sites.append(siteData);
   }
   settings.endArray();
-  
+
   // Check if it already exists
   bool exists = false;
-  for (int i = 0; i < sites.size(); ++i) {
-    if (sites[i]["host"].toString() == currentHost && sites[i]["username"].toString() == currentUsername) {
+  for (int i = 0; i < sites.size(); ++i)
+  {
+    if (sites[i]["host"].toString() == currentHost &&
+        sites[i]["username"].toString() == currentUsername)
+    {
       // Update password if changed
       sites[i]["password"] = currentPassword;
       exists = true;
-      
+
       // Update combo box
-      for (int j = 1; j < savedSitesComboBox->count(); ++j) {
+      for (int j = 1; j < savedSitesComboBox->count(); ++j)
+      {
         QVariantMap data = savedSitesComboBox->itemData(j).toMap();
-        if (data["host"].toString() == currentHost && data["username"].toString() == currentUsername) {
+        if (data["host"].toString() == currentHost &&
+            data["username"].toString() == currentUsername)
+        {
           savedSitesComboBox->setItemData(j, sites[i]);
           break;
         }
@@ -1074,21 +1237,24 @@ MainWindow::saveCurrentSite()
       break;
     }
   }
-  
-  if (!exists) {
+
+  if (!exists)
+  {
     QVariantMap newSite;
     newSite["host"] = currentHost;
     newSite["username"] = currentUsername;
     newSite["password"] = currentPassword;
     sites.append(newSite);
-    
+
     // Add to UI combobox as well
-    savedSitesComboBox->addItem(QString("%1 (%2)").arg(currentHost, currentUsername), newSite);
+    savedSitesComboBox->addItem(QString("%1 (%2)").arg(currentHost, currentUsername),
+                                newSite);
   }
-  
+
   // Save back
   settings.beginWriteArray("SavedSites");
-  for (int i = 0; i < sites.size(); ++i) {
+  for (int i = 0; i < sites.size(); ++i)
+  {
     settings.setArrayIndex(i);
     settings.setValue("host", sites[i]["host"]);
     settings.setValue("username", sites[i]["username"]);
@@ -1100,28 +1266,33 @@ MainWindow::saveCurrentSite()
 void
 MainWindow::onSavedSiteSelected(int index)
 {
-  if (index == 0) return; // "Sparade sajter..."
-  
+  if (index == 0)
+    return;  // "Sparade sajter..."
+
   QVariant data = savedSitesComboBox->itemData(index);
   QVariantMap siteData = data.toMap();
-  
-  if (!siteData.isEmpty()) {
+
+  if (!siteData.isEmpty())
+  {
     hostLineEdit->setText(siteData["host"].toString());
     usernameLineEdit->setText(siteData["username"].toString());
     passwordLineEdit->setText(siteData["password"].toString());
-    
-    if (m_ftpCommunicator->isConnected()) {
+
+    if (m_ftpCommunicator->isConnected())
+    {
       // Koppla från automatiskt
       connectOrDisconnect();
-      
+
       // Vänta en halv sekund så anslutningen hinner stängas, anslut sedan igen
       QTimer::singleShot(500, this, &MainWindow::connectOrDisconnect);
-    } else {
+    }
+    else
+    {
       // Auto-connect!
       connectOrDisconnect();
     }
   }
-  
+
   // Återställ rullgardinsmenyn så den fungerar som en åtgärdsmeny
   savedSitesComboBox->setCurrentIndex(0);
 }
@@ -1132,5 +1303,94 @@ MainWindow::onLocalDirectoryChanged(const QString &path)
   if (path == m_localCurrentPath)
   {
     populateLocalList(path);
+  }
+}
+void
+MainWindow::onDropOnLocal(const QMimeData *mimeData, QTreeWidgetItem *targetItem)
+{
+  QString localDir = m_localCurrentPath;
+  if (targetItem)
+  {
+    QString itemPath = targetItem->data(0, Qt::UserRole).toString();
+    QFileInfo fileInfo(itemPath);
+    if (fileInfo.isDir())
+    {
+      localDir = itemPath;
+    }
+  }
+
+  if (mimeData->hasText())
+  {
+    QString itemName = mimeData->text();
+
+    if (m_remoteFiles.contains(itemName))
+    {
+      bool isDir = m_remoteFiles.value(itemName).isDir;
+      if (isDir)
+      {
+        m_ftpCommunicator->downloadFolder(itemName, localDir);
+      }
+      else
+      {
+        QString localFilePath = QDir(localDir).filePath(itemName);
+        if (QFile::exists(localFilePath))
+        {
+          QMessageBox::StandardButton reply = QMessageBox::question(this,
+                                                                    "File Exists",
+                                                                    QString("File '%1' "
+                                                                            "already exists. "
+                                                                            "Overwrite?")
+                                                                        .arg(itemName),
+                                                                    QMessageBox::Yes |
+                                                                        QMessageBox::No);
+          if (reply != QMessageBox::Yes)
+            return;
+        }
+        m_ftpCommunicator->downloadFile(itemName, localDir);
+      }
+    }
+  }
+}
+
+void
+MainWindow::onDropOnRemote(const QMimeData *mimeData, QTreeWidgetItem *targetItem)
+{
+  QString remoteDir = m_ftpCommunicator->getCurrentPath();
+  if (targetItem)
+  {
+    QString itemName = targetItem->data(0, Qt::UserRole).toString();
+    if (itemName != ".." && m_remoteFiles.contains(itemName) &&
+        m_remoteFiles.value(itemName).isDir)
+    {
+      QUrl url;
+      if (remoteDir.endsWith('/') || remoteDir.isEmpty())
+        url.setPath(remoteDir);
+      else
+        url.setPath(remoteDir + '/');
+
+      remoteDir = url.resolved(QUrl(itemName)).path();
+    }
+  }
+  if (mimeData->hasUrls())
+  {
+    QList<QUrl> urls = mimeData->urls();
+    for (const QUrl &url : urls)
+    {
+      QString filePath = url.toLocalFile();
+      if (!filePath.isEmpty())
+      {
+        QFileInfo fileInfo(filePath);
+        if (fileInfo.isDir())
+        {
+          m_ftpCommunicator->uploadFolder(filePath, remoteDir);
+        }
+        else
+        {
+          QString remotePath = remoteDir.endsWith('/') ? remoteDir : remoteDir + "/";
+          remotePath += fileInfo.fileName();
+          m_ftpCommunicator->uploadFile(filePath, remotePath);
+        }
+      }
+    }
   }
 }

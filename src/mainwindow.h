@@ -1,24 +1,45 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QFileSystemWatcher>
 #include <QHash>
 #include <QMainWindow>
+#include <QMimeData>
 #include <QString>
+#include <QTreeWidget>
 
 #include "ftpcommunicator.h"
-
-#include <QFileSystemWatcher>
 
 QT_BEGIN_NAMESPACE
 class QComboBox;
 class QLineEdit;
 class QPushButton;
 class QSplitter;
-class QTreeWidget;
 class QTreeWidgetItem;
 class QTextEdit;
 class QLabel;
 QT_END_NAMESPACE
+
+class DropEnabledTreeWidget : public QTreeWidget
+{
+  Q_OBJECT
+
+public:
+  explicit DropEnabledTreeWidget(QWidget *parent = nullptr) : QTreeWidget(parent)
+  {
+  }
+
+signals:
+  void itemDropped(const QMimeData *mimeData, QTreeWidgetItem *targetItem);
+
+protected:
+  void dragEnterEvent(QDragEnterEvent *event) override;
+  void dragMoveEvent(QDragMoveEvent *event) override;
+  void dropEvent(QDropEvent *event) override;
+  void startDrag(Qt::DropActions supportedActions) override;
+};
 
 class MainWindow : public QMainWindow
 {
@@ -54,9 +75,12 @@ private slots:
   void renameLocalItem(const QString &oldPath);
   void createRemoteFolder();
   void createLocalFolder();
-  
+
   void onSavedSiteSelected(int index);
   void onLocalDirectoryChanged(const QString &path);
+
+  void onDropOnLocal(const QMimeData *mimeData, QTreeWidgetItem *targetItem);
+  void onDropOnRemote(const QMimeData *mimeData, QTreeWidgetItem *targetItem);
 
 private:
   void createUi();
@@ -76,11 +100,11 @@ private:
 
   // File browsers
   QSplitter *splitter;
-  QTreeWidget *localListWidget;
+  DropEnabledTreeWidget *localListWidget;
   QString m_localCurrentPath;
   QFileSystemWatcher *m_localWatcher;
 
-  QTreeWidget *remoteListWidget;
+  DropEnabledTreeWidget *remoteListWidget;
 
   // Status log
   QTextEdit *statusLog;
