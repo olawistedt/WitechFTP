@@ -51,6 +51,7 @@ private slots:
   void deleteRemoteFileConfirmed(const QString &fileName);
   void deleteRemoteDirectoryConfirmed(const QString &dirName);
   void renameRemoteItem(const QString &oldName);
+  void renameLocalItem(const QString &oldPath);
   void createRemoteFolder();
   void createLocalFolder();
   

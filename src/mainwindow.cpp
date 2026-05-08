@@ -287,6 +287,27 @@ MainWindow::createUi()
         m_ftpCommunicator->listRemoteDirectory(m_ftpCommunicator->getCurrentPath());
   });
 
+  // Keyboard support for Rename (F2)
+  QShortcut *localRenameShortcut = new QShortcut(QKeySequence("F2"), localListWidget);
+  connect(localRenameShortcut, &QShortcut::activated, [this]() {
+    QTreeWidgetItem *item = localListWidget->currentItem();
+    if (item) {
+        QString itemPath = item->data(0, Qt::UserRole).toString();
+        if (itemPath != ".." && !itemPath.isEmpty())
+            renameLocalItem(itemPath);
+    }
+  });
+
+  QShortcut *remoteRenameShortcut = new QShortcut(QKeySequence("F2"), remoteListWidget);
+  connect(remoteRenameShortcut, &QShortcut::activated, [this]() {
+    QTreeWidgetItem *item = remoteListWidget->currentItem();
+    if (item && m_ftpCommunicator->isConnected()) {
+        QString itemName = item->data(0, Qt::UserRole).toString();
+        if (itemName != ".." && !itemName.isEmpty())
+            renameRemoteItem(itemName);
+    }
+  });
+
   populateLocalList(localStartPath);
 }
 
@@ -584,12 +605,14 @@ MainWindow::showLocalContextMenu(const QPoint &pos)
   if (m_localCurrentPath.isEmpty())
     createFolderAction->setEnabled(false);
 
+  QAction *renameAction = nullptr;
   QAction *uploadAction = nullptr;
   QAction *deleteAction = nullptr;
 
   if (!itemPath.isEmpty())
   {
     contextMenu.addSeparator();
+    renameAction = contextMenu.addAction("Byt namn");
     QFileInfo info(itemPath);
     if (info.isDir())
     {
@@ -614,6 +637,10 @@ MainWindow::showLocalContextMenu(const QPoint &pos)
   else if (selectedAction == createFolderAction)
   {
     createLocalFolder();
+  }
+  else if (selectedAction == renameAction)
+  {
+    renameLocalItem(itemPath);
   }
   else if (selectedAction == uploadAction)
   {
@@ -682,6 +709,40 @@ MainWindow::createLocalFolder()
   else
   {
     QMessageBox::critical(this, "Fel", "Kunde inte skapa mappen.");
+  }
+}
+
+void
+MainWindow::renameLocalItem(const QString &oldPath)
+{
+  QFileInfo fileInfo(oldPath);
+  QString oldName = fileInfo.fileName();
+
+  bool ok;
+  QString newName = QInputDialog::getText(this,
+                                          "Byt namn",
+                                          "Nytt namn:",
+                                          QLineEdit::Normal,
+                                          oldName,
+                                          &ok);
+  if (!ok || newName.trimmed().isEmpty() || newName == oldName)
+    return;
+
+  QString newPath = fileInfo.dir().filePath(newName.trimmed());
+
+  if (QFile::exists(newPath))
+  {
+    QMessageBox::warning(this, "Filen finns redan", "En fil eller mapp med det namnet finns redan.");
+    return;
+  }
+
+  if (QFile::rename(oldPath, newPath))
+  {
+    populateLocalList(m_localCurrentPath);
+  }
+  else
+  {
+    QMessageBox::critical(this, "Fel", "Kunde inte byta namn på objektet.");
   }
 }
 
