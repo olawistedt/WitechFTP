@@ -7,6 +7,7 @@
 #include <QHash>
 #include <QMainWindow>
 #include <QMimeData>
+#include <QQueue> // Added for download queue
 #include <QString>
 #include <QTreeWidget>
 
@@ -82,6 +83,8 @@ private slots:
   void onDropOnLocal(const QMimeData *mimeData, QTreeWidgetItem *targetItem);
   void onDropOnRemote(const QMimeData *mimeData, QTreeWidgetItem *targetItem);
 
+  void processDownloadFolderQueue();
+
 private:
   void createUi();
   void logStatus(const QString &message);
@@ -115,6 +118,8 @@ private:
   // UI state
   QString m_currentRemotePath;
   QHash<QString, FtpCommunicator::RemoteFileInfo> m_remoteFiles;
+  QQueue<QString> m_downloadFolderQueue;
 };
+
 
 #endif  // MAINWINDOW_H

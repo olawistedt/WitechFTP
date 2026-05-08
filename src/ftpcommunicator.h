@@ -55,6 +55,7 @@ public:
   QString getCurrentPath() const { return m_currentPath; }
   bool isDirectory(const QString &name) const { return m_remoteFiles.contains(name) && m_remoteFiles.value(name).isDir; }
   QHash<QString, RemoteFileInfo> getRemoteFiles() const { return m_remoteFiles; }
+  bool isDownloadInProgress() const { return m_downloadInProgress; }
 
 signals:
   // Connection signals

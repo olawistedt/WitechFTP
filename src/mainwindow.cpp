@@ -71,7 +71,7 @@ DropEnabledTreeWidget::dropEvent(QDropEvent *event)
     return;
   }
 
-  QTreeWidgetItem *targetItem = itemAt(event->pos());
+  QTreeWidgetItem *targetItem = itemAt(event->position().toPoint());
   emit itemDropped(event->mimeData(), targetItem);
   event->acceptProposedAction();
 }
@@ -79,30 +79,46 @@ DropEnabledTreeWidget::dropEvent(QDropEvent *event)
 void
 DropEnabledTreeWidget::startDrag(Qt::DropActions /*supportedActions*/)
 {
-  QTreeWidgetItem *item = currentItem();
-  if (!item)
-  {
-    return;
-  }
-
-  QString itemPath = item->data(0, Qt::UserRole).toString();
-  if (itemPath == "..")
+  QList<QTreeWidgetItem *> items = selectedItems();
+  if (items.isEmpty())
   {
     return;
   }
 
   QMimeData *mimeData = new QMimeData;
+  QList<QUrl> urls;
+  QStringList remoteNames;
 
   // Check if we are the local or remote widget
   if (this->objectName() == "localListWidget")
   {
-    QList<QUrl> urls;
-    urls.append(QUrl::fromLocalFile(itemPath));
+    for (QTreeWidgetItem *item : items)
+    {
+      QString itemPath = item->data(0, Qt::UserRole).toString();
+      if (itemPath != "..")
+      {
+        urls.append(QUrl::fromLocalFile(itemPath));
+      }
+    }
     mimeData->setUrls(urls);
   }
   else
   {  // remoteListWidget
-    mimeData->setText(item->text(0));  // The item name
+    for (QTreeWidgetItem *item : items)
+    {
+      QString itemName = item->text(0);
+      if (itemName != "..")
+      {
+        remoteNames.append(itemName);
+      }
+    }
+    mimeData->setText(remoteNames.join("\n")); // Join with newline for multiple items
+  }
+
+  if (urls.isEmpty() && remoteNames.isEmpty())
+  {
+      delete mimeData;
+      return;
   }
 
   QDrag *drag = new QDrag(this);
@@ -111,6 +127,7 @@ DropEnabledTreeWidget::startDrag(Qt::DropActions /*supportedActions*/)
 }
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
+    , m_downloadFolderQueue()
 {
   m_ftpCommunicator = new FtpCommunicator(this);
   m_localWatcher = new QFileSystemWatcher(this);
@@ -291,6 +308,7 @@ MainWindow::createUi()
 
   localListWidget = new DropEnabledTreeWidget(localWidget);
   localListWidget->setObjectName("localListWidget");
+  localListWidget->setSelectionMode(QAbstractItemView::ExtendedSelection);
   localListWidget->setDragEnabled(true);
   localListWidget->setAcceptDrops(true);
   localListWidget->setDropIndicatorShown(true);
@@ -309,6 +327,7 @@ MainWindow::createUi()
   // Remote
   remoteListWidget = new DropEnabledTreeWidget(splitter);
   remoteListWidget->setObjectName("remoteListWidget");
+  remoteListWidget->setSelectionMode(QAbstractItemView::ExtendedSelection);
   remoteListWidget->setDragEnabled(true);
   remoteListWidget->setAcceptDrops(true);
   remoteListWidget->setDropIndicatorShown(true);
@@ -322,6 +341,7 @@ MainWindow::createUi()
   remoteListWidget->setContextMenuPolicy(Qt::CustomContextMenu);
   remoteListWidget->setIconSize(QSize(16, 16));
   remoteListWidget->setRootIsDecorated(false);
+  remoteListWidget->setStyleSheet("QTreeWidget::item:selected { background-color: #0078d7; color: white; }");
 
   splitter->addWidget(localWidget);
   splitter->addWidget(remoteListWidget);
@@ -712,12 +732,36 @@ MainWindow::onFtpDownloadComplete()
 {
   logStatus("Download complete.");
   populateLocalList(m_localCurrentPath);
+  processDownloadFolderQueue(); // Process next item in queue
 }
 
 // --- Old FTP Connection Slots (removed) ---
 // The following methods have been moved to FtpCommunicator and are no longer needed:
 // onControlConnected(), onControlReadyRead(), onControlDisconnected(), onControlError()
 // onDataReadyRead(), onDataConnected(), onDataDisconnected(), onDataError()
+
+void
+MainWindow::processDownloadFolderQueue()
+{
+  if (m_downloadFolderQueue.isEmpty())
+  {
+    // All folders processed
+    return;
+  }
+
+  // Check if FTP Communicator is busy with another download. Only proceed if not.
+  // FtpCommunicator is designed to handle one command at a time.
+  // We need to ensure no other commands (especially downloads) are in progress.
+  if (m_ftpCommunicator->isDownloadInProgress())
+  {
+      // FtpCommunicator is busy, wait for current operation to complete.
+      // processDownloadFolderQueue will be called again on downloadComplete.
+      return;
+  }
+
+  QString remoteFolderName = m_downloadFolderQueue.dequeue();
+  downloadFolder(remoteFolderName);
+}
 
 void
 MainWindow::showLocalContextMenu(const QPoint &pos)
@@ -1321,32 +1365,39 @@ MainWindow::onDropOnLocal(const QMimeData *mimeData, QTreeWidgetItem *targetItem
 
   if (mimeData->hasText())
   {
-    QString itemName = mimeData->text();
-
-    if (m_remoteFiles.contains(itemName))
+    QStringList itemNames = mimeData->text().split("\n", Qt::SkipEmptyParts);
+    for (const QString &itemName : itemNames)
     {
-      bool isDir = m_remoteFiles.value(itemName).isDir;
-      if (isDir)
+      if (m_remoteFiles.contains(itemName))
       {
-        m_ftpCommunicator->downloadFolder(itemName, localDir);
-      }
-      else
-      {
-        QString localFilePath = QDir(localDir).filePath(itemName);
-        if (QFile::exists(localFilePath))
+        bool isDir = m_remoteFiles.value(itemName).isDir;
+        if (isDir)
         {
-          QMessageBox::StandardButton reply = QMessageBox::question(this,
-                                                                    "File Exists",
-                                                                    QString("File '%1' "
-                                                                            "already exists. "
-                                                                            "Overwrite?")
-                                                                        .arg(itemName),
-                                                                    QMessageBox::Yes |
-                                                                        QMessageBox::No);
-          if (reply != QMessageBox::Yes)
-            return;
+          m_downloadFolderQueue.enqueue(itemName);
+          if (m_downloadFolderQueue.size() == 1)
+          {
+            // Only start processing if this is the first item added to an empty queue
+            processDownloadFolderQueue();
+          }
         }
-        m_ftpCommunicator->downloadFile(itemName, localDir);
+        else
+        {
+          QString localFilePath = QDir(localDir).filePath(itemName);
+          if (QFile::exists(localFilePath))
+          {
+            QMessageBox::StandardButton reply = QMessageBox::question(this,
+                                                                      "File Exists",
+                                                                      QString("File '%1' "
+                                                                              "already exists. "
+                                                                              "Overwrite?")
+                                                                          .arg(itemName),
+                                                                      QMessageBox::Yes |
+                                                                          QMessageBox::No);
+            if (reply != QMessageBox::Yes)
+              continue; // Skip this file and continue with others
+          }
+          m_ftpCommunicator->downloadFile(itemName, localDir);
+        }
       }
     }
   }
@@ -1388,6 +1439,21 @@ MainWindow::onDropOnRemote(const QMimeData *mimeData, QTreeWidgetItem *targetIte
         {
           QString remotePath = remoteDir.endsWith('/') ? remoteDir : remoteDir + "/";
           remotePath += fileInfo.fileName();
+
+          // Check if remote file already exists (basic check, FTP server might handle it too)
+          if (m_remoteFiles.contains(fileInfo.fileName()))
+          {
+            QMessageBox::StandardButton reply = QMessageBox::question(this,
+                                                                      "File Exists",
+                                                                      QString("Remote file '%1' "
+                                                                              "already exists. "
+                                                                              "Overwrite?")
+                                                                          .arg(fileInfo.fileName()),
+                                                                      QMessageBox::Yes |
+                                                                          QMessageBox::No);
+            if (reply != QMessageBox::Yes)
+              continue; // Skip this file and continue with others
+          }
           m_ftpCommunicator->uploadFile(filePath, remotePath);
         }
       }
