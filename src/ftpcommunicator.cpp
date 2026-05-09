@@ -873,7 +873,6 @@ FtpCommunicator::getCurrentDirectory()
 void
 FtpCommunicator::uploadFile(const QString &localPath, const QString &remotePath)
 {
-  m_uploadQueue.clear();
   m_uploadQueue.enqueue({ FtpUploadCommand::UploadFile, localPath, remotePath });
   processUploadQueue();
 }
@@ -881,7 +880,6 @@ FtpCommunicator::uploadFile(const QString &localPath, const QString &remotePath)
 void
 FtpCommunicator::uploadFolder(const QString &localPath, const QString &remotePath)
 {
-  m_uploadQueue.clear();
   QFileInfo fileInfo(localPath);
   QString remoteFolderPath;
   if (remotePath.endsWith('/'))
