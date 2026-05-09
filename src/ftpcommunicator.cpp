@@ -1157,8 +1157,6 @@ FtpCommunicator::downloadFolder(const QString &remoteFolderName, const QString &
     remotePath = m_currentPath + "/" + remoteFolderName;
 
   m_downloadInProgress = true;
-  m_downloadQueue.clear();
-  m_remoteDirsToExploreForDownload.clear();
   m_localBaseDirForDownload = localDir;
   m_baseRemotePathForDownload = m_currentPath;
 
