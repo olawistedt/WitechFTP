@@ -106,7 +106,7 @@ MainWindow::createUi()
   QWidget *titleWidget = new QWidget;
   QHBoxLayout *titleLayout = new QHBoxLayout(titleWidget);
   
-  QLabel *titleLabel = new QLabel("WitechFTP v1.2");
+  QLabel *titleLabel = new QLabel("WitechFTP v1.5");
   QFont titleFont("Arial", 24, QFont::Bold);
   titleLabel->setFont(titleFont);
   titleLabel->setAlignment(Qt::AlignCenter);
