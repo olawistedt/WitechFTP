@@ -1,10 +1,12 @@
 #include "mainwindow.h"
 #include "ftpcommunicator.h"
 
+#include <QApplication>
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
+#include <QEvent>
 #include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
@@ -12,6 +14,7 @@
 #include <QHeaderView>
 #include <QIcon>
 #include <QInputDialog>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QTreeWidget>
@@ -256,24 +259,8 @@ MainWindow::createUi()
           &MainWindow::showRemoteContextMenu);
   connect(localListWidget, &QTreeWidget::itemActivated, this, &MainWindow::onLocalItemClicked);
 
-  // Keyboard support for Delete
-  QShortcut *localDeleteShortcut = new QShortcut(QKeySequence::Delete, localListWidget);
-  connect(localDeleteShortcut, &QShortcut::activated, [this]() {
-    QTreeWidgetItem *item = localListWidget->currentItem();
-    if (item) {
-        // Trigger deletion logic (simplified for this example)
-        // In a real app, we'd refactor the context menu logic into helper methods
-        showLocalContextMenu(localListWidget->visualItemRect(item).center());
-    }
-  });
-
-  QShortcut *remoteDeleteShortcut = new QShortcut(QKeySequence::Delete, remoteListWidget);
-  connect(remoteDeleteShortcut, &QShortcut::activated, [this]() {
-    QTreeWidgetItem *item = remoteListWidget->currentItem();
-    if (item) {
-        showRemoteContextMenu(remoteListWidget->visualItemRect(item).center());
-    }
-  });
+  // Install event filter on main window to catch Delete key press
+  installEventFilter(this);
 
   // Keyboard support for Refresh (F5)
   QShortcut *localRefreshShortcut = new QShortcut(QKeySequence("F5"), localListWidget);
@@ -1132,5 +1119,124 @@ MainWindow::onLocalDirectoryChanged(const QString &path)
   if (path == m_localCurrentPath)
   {
     populateLocalList(path);
+  }
+}
+
+bool
+MainWindow::eventFilter(QObject *obj, QEvent *event)
+{
+  if (event->type() == QEvent::KeyPress)
+  {
+    QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+    
+    if (keyEvent->key() == Qt::Key_Delete)
+    {
+      // Check which widget has focus
+      QWidget *focusWidget = QApplication::focusWidget();
+      
+      if (focusWidget == localListWidget || localListWidget->isAncestorOf(focusWidget))
+      {
+        deleteLocalItemDirectly();
+        return true;  // Mark event as handled
+      }
+      else if (focusWidget == remoteListWidget || remoteListWidget->isAncestorOf(focusWidget))
+      {
+        deleteRemoteItemDirectly();
+        return true;  // Mark event as handled
+      }
+    }
+  }
+
+  return QMainWindow::eventFilter(obj, event);
+}
+
+void
+MainWindow::deleteLocalItemDirectly()
+{
+  QTreeWidgetItem *item = localListWidget->currentItem();
+  if (!item)
+    return;
+
+  QString itemPath = item->data(0, Qt::UserRole).toString();
+
+  // Don't delete ".." or drive navigation items
+  if (itemPath.isEmpty() || itemPath == "..")
+    return;
+
+  QFileInfo info(itemPath);
+  QString typeStr = info.isDir() ? "mappen" : "filen";
+
+  // Ask for confirmation
+  QMessageBox::StandardButton reply =
+      QMessageBox::question(this,
+                            QString("Ta bort %1").arg(info.isDir() ? "mapp" : "fil"),
+                            QString("Är du säker på att du vill ta bort %1 '%2'?").arg(typeStr, info.fileName()),
+                            QMessageBox::Yes | QMessageBox::No);
+
+  if (reply != QMessageBox::Yes)
+    return;
+
+  // Delete the file or folder
+  bool success = false;
+  if (info.isDir())
+  {
+    QDir dir(itemPath);
+    success = dir.removeRecursively();
+  }
+  else
+  {
+    success = QFile::remove(itemPath);
+  }
+
+  if (!success)
+  {
+    QMessageBox::critical(this, "Fel", QString("Kunde inte ta bort %1: %2").arg(typeStr, info.fileName()));
+  }
+  else
+  {
+    logStatus(QString("Tog bort %1: %2").arg(typeStr, info.fileName()));
+    populateLocalList(m_localCurrentPath);
+  }
+}
+
+void
+MainWindow::deleteRemoteItemDirectly()
+{
+  if (!m_ftpCommunicator->isConnected())
+    return;
+
+  QTreeWidgetItem *item = remoteListWidget->currentItem();
+  if (!item)
+    return;
+
+  QString itemName = item->data(0, Qt::UserRole).toString();
+  if (itemName.isEmpty())
+    itemName = item->text(0);
+
+  // Don't delete ".." navigation item
+  if (itemName.isEmpty() || itemName == "..")
+    return;
+
+  bool isDirectory = m_ftpCommunicator->isDirectory(itemName);
+  QString typeStr = isDirectory ? "mappen" : "filen";
+
+  // Ask for confirmation
+  QMessageBox::StandardButton reply =
+      QMessageBox::question(this,
+                            QString("Ta bort %1").arg(isDirectory ? "mapp" : "fil"),
+                            QString("Är du säker på att du vill ta bort %1 '%2'?").arg(typeStr, itemName),
+                            QMessageBox::Yes | QMessageBox::No);
+
+  if (reply != QMessageBox::Yes)
+    return;
+
+  // Delete the file or folder
+  if (isDirectory)
+  {
+    deleteRemoteDirectoryConfirmed(itemName);
+  }
+  else
+  {
+    deleteRemoteFileConfirmed(itemName);
   }
 }

@@ -28,6 +28,9 @@ public:
   MainWindow(QWidget *parent = nullptr);
   ~MainWindow();
 
+protected:
+  bool eventFilter(QObject *obj, QEvent *event) override;
+
 private slots:
   void connectOrDisconnect();
   void onRemoteItemClicked(QTreeWidgetItem *item);
@@ -57,6 +60,10 @@ private slots:
   
   void onSavedSiteSelected(int index);
   void onLocalDirectoryChanged(const QString &path);
+  
+  // Direct delete handlers (called by keyboard shortcut)
+  void deleteLocalItemDirectly();
+  void deleteRemoteItemDirectly();
 
 private:
   void createUi();
