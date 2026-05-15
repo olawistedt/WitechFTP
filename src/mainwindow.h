@@ -46,6 +46,7 @@ private slots:
   void onFtpDirectoryListReceived();
   void onFtpMd5Received(const QString &fileName, const QString &md5);
   void onFtpDownloadComplete();
+  void onFtpUploadComplete();
 
   void showLocalContextMenu(const QPoint &pos);
   void showRemoteContextMenu(const QPoint &pos);

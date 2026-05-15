@@ -51,6 +51,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   connect(m_ftpCommunicator, &FtpCommunicator::directoryListReceived, this, &MainWindow::onFtpDirectoryListReceived);
   connect(m_ftpCommunicator, &FtpCommunicator::md5Received, this, &MainWindow::onFtpMd5Received);
   connect(m_ftpCommunicator, &FtpCommunicator::downloadComplete, this, &MainWindow::onFtpDownloadComplete);
+  connect(m_ftpCommunicator, &FtpCommunicator::uploadComplete, this, &MainWindow::onFtpUploadComplete);
 
   // Connect local watcher
   connect(m_localWatcher, &QFileSystemWatcher::directoryChanged, this, &MainWindow::onLocalDirectoryChanged);
@@ -564,8 +565,14 @@ MainWindow::downloadFolder(const QString &folderName)
 void
 MainWindow::onFtpDownloadComplete()
 {
-  logStatus("Download complete.");
+  logStatus("Finished!");
   populateLocalList(m_localCurrentPath);
+}
+
+void
+MainWindow::onFtpUploadComplete()
+{
+  logStatus("Finished!");
 }
 
 // --- Old FTP Connection Slots (removed) ---
