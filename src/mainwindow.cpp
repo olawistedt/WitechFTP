@@ -466,13 +466,14 @@ MainWindow::createUi()
 {
   // --- Title ---
   QWidget *titleWidget = new QWidget;
-  QHBoxLayout *titleLayout = new QHBoxLayout(titleWidget);
-  
-  QLabel *titleLabel = new QLabel("WitechFTP v1.3-beta1");
+  QGridLayout *titleGrid = new QGridLayout(titleWidget);
+  titleGrid->setContentsMargins(5, 5, 5, 5);
+
+  QLabel *titleLabel = new QLabel("WitechFTP v1.3");
   QFont titleFont("Arial", 24, QFont::Bold);
   titleLabel->setFont(titleFont);
   titleLabel->setAlignment(Qt::AlignCenter);
-  
+
   QHBoxLayout *rightLayout = new QHBoxLayout;
 
   m_langCombo = new QComboBox;
@@ -490,10 +491,12 @@ MainWindow::createUi()
   rightLayout->addWidget(m_langCombo);
   rightLayout->addWidget(savedSitesComboBox);
 
-  titleLayout->addStretch();
-  titleLayout->addWidget(titleLabel);
-  titleLayout->addStretch();
-  titleLayout->addLayout(rightLayout);
+  QWidget *rightWidget = new QWidget;
+  rightWidget->setLayout(rightLayout);
+
+  // Title spans full width and is truly centered; right controls sit on top-right
+  titleGrid->addWidget(titleLabel,  0, 0, 1, 2, Qt::AlignCenter);
+  titleGrid->addWidget(rightWidget, 0, 1,       Qt::AlignRight);
   titleWidget->setStyleSheet("padding: 5px;");
 
   // --- Connection Bar ---
