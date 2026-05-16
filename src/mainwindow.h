@@ -20,6 +20,8 @@ class QTextEdit;
 class QLabel;
 QT_END_NAMESPACE
 
+struct LangStrings;
+
 class MainWindow : public QMainWindow
 {
   Q_OBJECT
@@ -58,20 +60,27 @@ private slots:
   void renameLocalItem(const QString &oldPath);
   void createRemoteFolder();
   void createLocalFolder();
-  
+
   void onSavedSiteSelected(int index);
   void onLocalDirectoryChanged(const QString &path);
-  
+
   // Direct delete handlers (called by keyboard shortcut)
   void deleteLocalItemDirectly();
   void deleteRemoteItemDirectly();
 
+  void onLanguageChanged(int index);
+
 private:
   void createUi();
+  void retranslateUi();
   void logStatus(const QString &message);
   void populateLocalList(const QString &path);
   void loadSavedSites();
   void saveCurrentSite();
+
+  // Language
+  int m_language; // 0 = Swedish, 1 = English
+  const LangStrings *m_s;
 
   // Connection widgets
   QComboBox *savedSitesComboBox;
@@ -81,6 +90,10 @@ private:
   QPushButton *connectButton;
   QPushButton *stopButton;
   QLabel *connectionStatusIcon;
+  QLabel *m_labelHost;
+  QLabel *m_labelUsername;
+  QLabel *m_labelPassword;
+  QComboBox *m_langCombo;
 
   // File browsers
   QSplitter *splitter;
