@@ -49,8 +49,13 @@ public:
   bool operator<(const QTreeWidgetItem &other) const override
   {
     const auto *o = static_cast<const FileTreeItem *>(&other);
-    if (m_type != o->m_type)
+    if (m_type != o->m_type) {
+      if (m_type == ParentDir || o->m_type == ParentDir) {
+        Qt::SortOrder ord = treeWidget()->header()->sortIndicatorOrder();
+        return ord == Qt::AscendingOrder ? m_type == ParentDir : m_type != ParentDir;
+      }
       return m_type < o->m_type;
+    }
     int col = treeWidget()->sortColumn();
     if (col == 1)
       return data(1, Qt::UserRole + 1).toLongLong() < o->data(1, Qt::UserRole + 1).toLongLong();
