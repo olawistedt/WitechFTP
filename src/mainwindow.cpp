@@ -89,9 +89,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   setWindowTitle("Witech FTP");
   setWindowIcon(QIcon(":/ftp-icon.png"));
 
-  QSettings settings("Witech", "WitechFTP");
+  QDir().mkpath(QDir::homePath() + "/.WitechFTP");
+  QSettings settings(QDir::homePath() + "/.WitechFTP/settings.ini", QSettings::IniFormat);
   hostLineEdit->setText(settings.value("lastHost", "ftp.witech.se").toString());
   usernameLineEdit->setText(settings.value("lastUsername", "witech.se").toString());
+  if (passwordLineEdit->text().isEmpty())
+    passwordLineEdit->setText(settings.value("lastPassword").toString());
 
   QByteArray savedGeometry = settings.value("windowGeometry").toByteArray();
   if (!savedGeometry.isEmpty())
@@ -113,22 +116,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 
 MainWindow::~MainWindow()
 {
-  QSettings settings("Witech", "WitechFTP");
+  QSettings settings(QDir::homePath() + "/.WitechFTP/settings.ini", QSettings::IniFormat);
   settings.setValue("windowGeometry", saveGeometry());
   settings.setValue("lastHost", hostLineEdit->text());
   settings.setValue("lastUsername", usernameLineEdit->text());
+  settings.setValue("lastPassword", passwordLineEdit->text());
 
   if (!m_localCurrentPath.isEmpty())
-  {
-    QString configDir = QDir::homePath() + "/.witech_ftp";
-    QDir().mkpath(configDir);
-    QFile file(configDir + "/last_local_path");
-    if (file.open(QIODevice::WriteOnly | QIODevice::Text))
-    {
-      QTextStream out(&file);
-      out << m_localCurrentPath;
-    }
-  }
+    settings.setValue("lastLocalPath", m_localCurrentPath);
 }
 
 void
@@ -206,13 +201,8 @@ MainWindow::createUi()
   splitter->setOrientation(Qt::Horizontal);
 
   // Local
-  QString localStartPath;
-  QString configDir = QDir::homePath() + "/.witech_ftp";
-  QFile file(configDir + "/last_local_path");
-  if (file.open(QIODevice::ReadOnly | QIODevice::Text))
-  {
-    localStartPath = QTextStream(&file).readAll().trimmed();
-  }
+  QSettings settings(QDir::homePath() + "/.WitechFTP/settings.ini", QSettings::IniFormat);
+  QString localStartPath = settings.value("lastLocalPath").toString();
   if (localStartPath.isEmpty() || !QDir(localStartPath).exists())
   {
     localStartPath =
@@ -1067,7 +1057,7 @@ MainWindow::downloadFile(const QString &fileName)
 void
 MainWindow::loadSavedSites()
 {
-  QSettings settings("Witech", "WitechFTP");
+  QSettings settings(QDir::homePath() + "/.WitechFTP/settings.ini", QSettings::IniFormat);
   int size = settings.beginReadArray("SavedSites");
   for (int i = 0; i < size; ++i) {
     settings.setArrayIndex(i);
@@ -1094,7 +1084,7 @@ MainWindow::saveCurrentSite()
   
   if (currentHost.isEmpty()) return;
 
-  QSettings settings("Witech", "WitechFTP");
+  QSettings settings(QDir::homePath() + "/.WitechFTP/settings.ini", QSettings::IniFormat);
   
   // Read existing
   QList<QVariantMap> sites;
