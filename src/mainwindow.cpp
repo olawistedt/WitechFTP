@@ -294,7 +294,7 @@ MainWindow::createUi()
 
   // --- Connections ---
   connect(connectButton, &QPushButton::clicked, this, &MainWindow::connectOrDisconnect);
-  connect(remoteListWidget, &QTreeWidget::itemActivated, this, &MainWindow::onRemoteItemClicked);
+  connect(remoteListWidget, &QTreeWidget::itemClicked, this, &MainWindow::onRemoteItemClicked);
   connect(localListWidget,
           &QTreeWidget::customContextMenuRequested,
           this,
@@ -303,7 +303,7 @@ MainWindow::createUi()
           &QTreeWidget::customContextMenuRequested,
           this,
           &MainWindow::showRemoteContextMenu);
-  connect(localListWidget, &QTreeWidget::itemActivated, this, &MainWindow::onLocalItemClicked);
+  connect(localListWidget, &QTreeWidget::itemClicked, this, &MainWindow::onLocalItemClicked);
 
   connect(localPathEdit, &QLineEdit::returnPressed, this, [this]() {
     QString path = localPathEdit->text().trimmed();
