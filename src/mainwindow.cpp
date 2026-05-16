@@ -38,6 +38,29 @@
 #include <QComboBox>
 #include <QVariantMap>
 
+class FileTreeItem : public QTreeWidgetItem
+{
+public:
+  enum ItemType { ParentDir = 0, Directory = 1, File = 2 };
+
+  FileTreeItem(QTreeWidget *parent, ItemType type)
+      : QTreeWidgetItem(parent), m_type(type) {}
+
+  bool operator<(const QTreeWidgetItem &other) const override
+  {
+    const auto *o = static_cast<const FileTreeItem *>(&other);
+    if (m_type != o->m_type)
+      return m_type < o->m_type;
+    int col = treeWidget()->sortColumn();
+    if (col == 1)
+      return data(1, Qt::UserRole + 1).toLongLong() < o->data(1, Qt::UserRole + 1).toLongLong();
+    return text(col).compare(o->text(col), Qt::CaseInsensitive) < 0;
+  }
+
+private:
+  ItemType m_type;
+};
+
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 {
   m_ftpCommunicator = new FtpCommunicator(this);
@@ -210,6 +233,9 @@ MainWindow::createUi()
   localListWidget->setContextMenuPolicy(Qt::CustomContextMenu);
   localListWidget->setIconSize(QSize(16, 16));
   localListWidget->setRootIsDecorated(false);
+  localListWidget->setSortingEnabled(true);
+  localListWidget->header()->setSortIndicatorShown(true);
+  localListWidget->sortByColumn(0, Qt::AscendingOrder);
   localLayout->addWidget(localListWidget);
 
   // Remote
@@ -231,6 +257,9 @@ MainWindow::createUi()
   remoteListWidget->setContextMenuPolicy(Qt::CustomContextMenu);
   remoteListWidget->setIconSize(QSize(16, 16));
   remoteListWidget->setRootIsDecorated(false);
+  remoteListWidget->setSortingEnabled(true);
+  remoteListWidget->header()->setSortIndicatorShown(true);
+  remoteListWidget->sortByColumn(0, Qt::AscendingOrder);
   remoteLayout->addWidget(remoteListWidget);
 
   splitter->addWidget(localWidget);
@@ -333,13 +362,17 @@ MainWindow::createUi()
 void
 MainWindow::populateLocalList(const QString &path)
 {
+  int sortCol = localListWidget->header()->sortIndicatorSection();
+  Qt::SortOrder sortOrder = localListWidget->header()->sortIndicatorOrder();
+  localListWidget->setSortingEnabled(false);
+
   m_localCurrentPath = path;
   localPathEdit->setText(path);
 
   // Update watcher to monitor the current directory
   if (!m_localWatcher->directories().isEmpty())
     m_localWatcher->removePaths(m_localWatcher->directories());
-  
+
   if (!path.isEmpty() && QDir(path).exists())
     m_localWatcher->addPath(path);
 
@@ -349,18 +382,20 @@ MainWindow::populateLocalList(const QString &path)
   {
     for (const QFileInfo &drive : QDir::drives())
     {
-      QTreeWidgetItem *item = new QTreeWidgetItem(localListWidget);
+      auto *item = new FileTreeItem(localListWidget, FileTreeItem::Directory);
       item->setText(0, drive.absoluteFilePath());
       item->setData(0, Qt::UserRole, drive.absoluteFilePath());
       item->setIcon(0, style()->standardIcon(QStyle::SP_DriveHDIcon));
     }
+    localListWidget->setSortingEnabled(true);
+    localListWidget->sortByColumn(sortCol, sortOrder);
     return;
   }
 
   QDir dir(path);
 
   // Add ".." to navigate up to parent or drive list
-  QTreeWidgetItem *upItem = new QTreeWidgetItem(localListWidget);
+  auto *upItem = new FileTreeItem(localListWidget, FileTreeItem::ParentDir);
   upItem->setText(0, "..");
   upItem->setData(0, Qt::UserRole, QString(".."));
   upItem->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
@@ -371,23 +406,24 @@ MainWindow::populateLocalList(const QString &path)
     return QString("%1 MB").arg(bytes / (1024 * 1024));
   };
 
-  // Directories first
-  for (const QFileInfo &info : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name | QDir::IgnoreCase))
+  // Directories
+  for (const QFileInfo &info : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot))
   {
-    QTreeWidgetItem *item = new QTreeWidgetItem(localListWidget);
+    auto *item = new FileTreeItem(localListWidget, FileTreeItem::Directory);
     item->setText(0, info.fileName());
     item->setText(2, info.lastModified().toString("yyyy-MM-dd HH:mm"));
     item->setData(0, Qt::UserRole, info.absoluteFilePath());
     item->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
   }
 
-  // Then files
-  for (const QFileInfo &info : dir.entryInfoList(QDir::Files, QDir::Name | QDir::IgnoreCase))
+  // Files
+  for (const QFileInfo &info : dir.entryInfoList(QDir::Files))
   {
-    QTreeWidgetItem *item = new QTreeWidgetItem(localListWidget);
+    auto *item = new FileTreeItem(localListWidget, FileTreeItem::File);
     item->setText(0, info.fileName());
     item->setText(1, formatSize(info.size()));
     item->setText(2, info.lastModified().toString("yyyy-MM-dd HH:mm"));
+    item->setData(1, Qt::UserRole + 1, info.size());
 
     // MD5 calculation for local file - skip if > 10MB to avoid UI hang
     if (info.size() < 10 * 1024 * 1024)
@@ -410,6 +446,9 @@ MainWindow::populateLocalList(const QString &path)
     item->setData(0, Qt::UserRole, info.absoluteFilePath());
     item->setIcon(0, style()->standardIcon(QStyle::SP_FileIcon));
   }
+
+  localListWidget->setSortingEnabled(true);
+  localListWidget->sortByColumn(sortCol, sortOrder);
 }
 
 void
@@ -498,7 +537,11 @@ MainWindow::onFtpStatusUpdated(const QString &message)
 void
 MainWindow::onFtpDirectoryListReceived()
 {
+  int sortCol = remoteListWidget->header()->sortIndicatorSection();
+  Qt::SortOrder sortOrder = remoteListWidget->header()->sortIndicatorOrder();
+  remoteListWidget->setSortingEnabled(false);
   remoteListWidget->clear();
+
   m_currentRemotePath = m_ftpCommunicator->getCurrentPath();
   remotePathEdit->setText(m_currentRemotePath);
   m_remoteFiles = m_ftpCommunicator->getRemoteFiles();
@@ -506,25 +549,11 @@ MainWindow::onFtpDirectoryListReceived()
   // Add ".." to navigate up, unless we are at root
   if (m_currentRemotePath != "/")
   {
-    QTreeWidgetItem *upItem = new QTreeWidgetItem(remoteListWidget);
+    auto *upItem = new FileTreeItem(remoteListWidget, FileTreeItem::ParentDir);
     upItem->setText(0, "..");
     upItem->setData(0, Qt::UserRole, QString(".."));
     upItem->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
   }
-
-  // Separate and sort directories and files
-  QStringList dirNames;
-  QStringList fileNames;
-  for (auto it = m_remoteFiles.constBegin(); it != m_remoteFiles.constEnd(); ++it)
-  {
-    if (it.value().isDir)
-      dirNames.append(it.key());
-    else
-      fileNames.append(it.key());
-  }
-
-  dirNames.sort(Qt::CaseInsensitive);
-  fileNames.sort(Qt::CaseInsensitive);
 
   auto formatSize = [](qint64 bytes) {
     if (bytes < 1024) return QString("%1 B").arg(bytes);
@@ -534,33 +563,25 @@ MainWindow::onFtpDirectoryListReceived()
 
   auto addItem = [&](const QString &name) {
     const FtpCommunicator::RemoteFileInfo &info = m_remoteFiles.value(name);
-    QTreeWidgetItem *item = new QTreeWidgetItem(remoteListWidget);
+    auto *item = new FileTreeItem(remoteListWidget,
+                                  info.isDir ? FileTreeItem::Directory : FileTreeItem::File);
     item->setText(0, name);
     if (!info.isDir)
-        item->setText(1, formatSize(info.size));
+    {
+      item->setText(1, formatSize(info.size));
+      item->setData(1, Qt::UserRole + 1, info.size);
+    }
     item->setText(2, info.date);
     item->setText(3, info.md5);
     item->setData(0, Qt::UserRole, name);
-    
-    if (info.isDir)
-    {
-      item->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
-    }
-    else
-    {
-      item->setIcon(0, style()->standardIcon(QStyle::SP_FileIcon));
-    }
+    item->setIcon(0, style()->standardIcon(info.isDir ? QStyle::SP_DirIcon : QStyle::SP_FileIcon));
   };
 
-  // Add directories first, then files
-  for (const QString &name : dirNames)
-  {
-    addItem(name);
-  }
-  for (const QString &name : fileNames)
-  {
-    addItem(name);
-  }
+  for (auto it = m_remoteFiles.constBegin(); it != m_remoteFiles.constEnd(); ++it)
+    addItem(it.key());
+
+  remoteListWidget->setSortingEnabled(true);
+  remoteListWidget->sortByColumn(sortCol, sortOrder);
 }
 
 void
