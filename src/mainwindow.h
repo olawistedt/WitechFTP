@@ -84,10 +84,12 @@ private:
 
   // File browsers
   QSplitter *splitter;
+  QLineEdit *localPathEdit;
   QTreeWidget *localListWidget;
   QString m_localCurrentPath;
   QFileSystemWatcher *m_localWatcher;
 
+  QLineEdit *remotePathEdit;
   QTreeWidget *remoteListWidget;
 
   // Status log

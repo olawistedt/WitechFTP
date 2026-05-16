@@ -194,6 +194,12 @@ MainWindow::createUi()
   QWidget *localWidget = new QWidget(splitter);
   QVBoxLayout *localLayout = new QVBoxLayout(localWidget);
   localLayout->setContentsMargins(0, 0, 0, 0);
+  localLayout->setSpacing(0);
+
+  localPathEdit = new QLineEdit(localWidget);
+  localPathEdit->setPlaceholderText("Lokal sökväg...");
+  localPathEdit->setText(localStartPath);
+  localLayout->addWidget(localPathEdit);
 
   localListWidget = new QTreeWidget(localWidget);
   localListWidget->setHeaderLabels({"Namn", "Storlek", "Datum", "MD5"});
@@ -207,7 +213,16 @@ MainWindow::createUi()
   localLayout->addWidget(localListWidget);
 
   // Remote
-  remoteListWidget = new QTreeWidget(splitter);
+  QWidget *remoteWidget = new QWidget(splitter);
+  QVBoxLayout *remoteLayout = new QVBoxLayout(remoteWidget);
+  remoteLayout->setContentsMargins(0, 0, 0, 0);
+  remoteLayout->setSpacing(0);
+
+  remotePathEdit = new QLineEdit(remoteWidget);
+  remotePathEdit->setPlaceholderText("Serversökväg...");
+  remoteLayout->addWidget(remotePathEdit);
+
+  remoteListWidget = new QTreeWidget(remoteWidget);
   remoteListWidget->setHeaderLabels({"Namn", "Storlek", "Datum", "MD5"});
   remoteListWidget->setColumnWidth(0, 200);
   remoteListWidget->setColumnWidth(1, 80);
@@ -216,9 +231,10 @@ MainWindow::createUi()
   remoteListWidget->setContextMenuPolicy(Qt::CustomContextMenu);
   remoteListWidget->setIconSize(QSize(16, 16));
   remoteListWidget->setRootIsDecorated(false);
+  remoteLayout->addWidget(remoteListWidget);
 
   splitter->addWidget(localWidget);
-  splitter->addWidget(remoteListWidget);
+  splitter->addWidget(remoteWidget);
   splitter->setStretchFactor(0, 1);
   splitter->setStretchFactor(1, 1);
 
@@ -259,6 +275,21 @@ MainWindow::createUi()
           this,
           &MainWindow::showRemoteContextMenu);
   connect(localListWidget, &QTreeWidget::itemActivated, this, &MainWindow::onLocalItemClicked);
+
+  connect(localPathEdit, &QLineEdit::returnPressed, this, [this]() {
+    QString path = localPathEdit->text().trimmed();
+    if (path.isEmpty() || QDir(path).exists())
+      populateLocalList(path);
+    else
+      localPathEdit->setText(m_localCurrentPath);
+  });
+
+  connect(remotePathEdit, &QLineEdit::returnPressed, this, [this]() {
+    if (m_ftpCommunicator->isConnected())
+      m_ftpCommunicator->changeDirectory(remotePathEdit->text().trimmed());
+    else
+      remotePathEdit->setText(m_currentRemotePath);
+  });
 
   // Install event filter on main window to catch Delete key press
   installEventFilter(this);
@@ -303,6 +334,7 @@ void
 MainWindow::populateLocalList(const QString &path)
 {
   m_localCurrentPath = path;
+  localPathEdit->setText(path);
 
   // Update watcher to monitor the current directory
   if (!m_localWatcher->directories().isEmpty())
@@ -441,6 +473,7 @@ void
 MainWindow::onFtpDisconnected()
 {
   remoteListWidget->clear();
+  remotePathEdit->clear();
   connectButton->setText("Anslut");
   hostLineEdit->setEnabled(true);
   usernameLineEdit->setEnabled(true);
@@ -467,6 +500,7 @@ MainWindow::onFtpDirectoryListReceived()
 {
   remoteListWidget->clear();
   m_currentRemotePath = m_ftpCommunicator->getCurrentPath();
+  remotePathEdit->setText(m_currentRemotePath);
   m_remoteFiles = m_ftpCommunicator->getRemoteFiles();
 
   // Add ".." to navigate up, unless we are at root

@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QDateTime>
 #include <QRegularExpression>
 #include <QTcpSocket>
 #include <QTextStream>
@@ -578,7 +579,23 @@ FtpCommunicator::onDataDisconnected()
       RemoteFileInfo info;
       info.isDir = parts[0].startsWith('d');
       info.size = parts[4].toLongLong();
-      info.date = QString("%1 %2 %3").arg(parts[5], parts[6], parts[7]);
+      if (parts[7].contains(':'))
+      {
+        // FTP servers report times in UTC; convert to local time for display
+        QString withYear = QString("%1 %2 %3 %4")
+            .arg(QDate::currentDate().year())
+            .arg(parts[5], parts[6], parts[7]);
+        QDateTime utcDt = QDateTime::fromString(withYear, "yyyy MMM d HH:mm");
+        utcDt.setTimeZone(QTimeZone::utc());
+        info.date = utcDt.isValid()
+            ? utcDt.toLocalTime().toString("yyyy-MM-dd HH:mm")
+            : QString("%1 %2 %3").arg(parts[5], parts[6], parts[7]);
+      }
+      else
+      {
+        // Older file: format is "MMM dd yyyy" — no time, just show as-is
+        info.date = QString("%1 %2 %3").arg(parts[5], parts[6], parts[7]);
+      }
       info.md5 = ""; // Will be filled by MD5 command if supported
 
       m_remoteFiles[name] = info;
