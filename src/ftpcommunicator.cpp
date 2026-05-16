@@ -593,8 +593,10 @@ FtpCommunicator::onDataDisconnected()
       }
       else
       {
-        // Older file: format is "MMM dd yyyy" — no time, just show as-is
-        info.date = QString("%1 %2 %3").arg(parts[5], parts[6], parts[7]);
+        // Older file: format is "MMM dd yyyy" — no time
+        QString raw = QString("%1 %2 %3").arg(parts[6], parts[5], parts[7]);
+        QDate d = QDate::fromString(raw, "d MMM yyyy");
+        info.date = d.isValid() ? d.toString("yyyy-MM-dd 00:00") : raw;
       }
       info.md5 = ""; // Will be filled by MD5 command if supported
 
