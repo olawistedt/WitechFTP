@@ -301,6 +301,71 @@ static const LangStrings s_es = {
   "Eliminado %1: %2",
 };
 
+static const LangStrings s_ja = {
+  "保存済みサイト...",
+  "接続",
+  "切断",
+  "接続中...",
+  "停止",
+  "ホスト:",
+  "ユーザー名:",
+  "パスワード:",
+  "接続済み",
+  "未接続",
+  "ローカルパス...",
+  "サーバーパス...",
+  "ステータスログ...",
+  "名前",
+  "サイズ",
+  "日付",
+  "",
+  "更新",
+  "フォルダを作成",
+  "新しいフォルダを作成",
+  "名前の変更",
+  "フォルダをサーバーにアップロード",
+  "ファイルをサーバーにアップロード",
+  "削除",
+  "フォルダを削除",
+  "ファイルをダウンロード",
+  "フォルダをダウンロード",
+  "ファイルを削除",
+  "%1:21 に接続中...",
+  "FTPパスワード",
+  "FTPパスワードを入力:",
+  "接続エラー",
+  "未接続",
+  "アップロードするにはサーバーに接続してください。",
+  "フォルダをアップロードするにはサーバーに接続してください。",
+  "ファイルを削除",
+  "ファイル '%1' を削除してもよろしいですか?",
+  "フォルダを削除",
+  "フォルダ '%1' を削除してもよろしいですか?",
+  "フォルダ",
+  "ファイル",
+  "フォルダ",
+  "ファイル",
+  "%1を削除",
+  "%1 '%2' を削除してもよろしいですか?",
+  "エラー",
+  "%1を削除できませんでした: %2",
+  "フォルダを作成できませんでした。",
+  "名前を変更できませんでした。",
+  "フォルダを作成",
+  "フォルダ名:",
+  "名前の変更",
+  "新しい名前:",
+  "ファイルが既に存在します",
+  "同じ名前のファイルまたはフォルダが既に存在します。",
+  "ファイルが存在します",
+  "ファイル '%1' は既に存在します。上書きしますか?",
+  "エラー",
+  "ファイルが存在しません。",
+  "%1を削除しました: %2",
+};
+
+static const LangStrings *s_langs[] = {&s_sv, &s_en, &s_es, &s_ja};
+
 class FileTreeItem : public QTreeWidgetItem
 {
 public:
@@ -337,9 +402,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   QDir().mkpath(QDir::homePath() + "/.WitechFTP");
   {
     QSettings s(QDir::homePath() + "/.WitechFTP/settings.ini", QSettings::IniFormat);
-    m_language = s.value("language", 0).toInt();
+    m_language = s.value("language", 1).toInt();
   }
-  m_s = (m_language == 0) ? &s_sv : (m_language == 1) ? &s_en : &s_es;
+  m_s = s_langs[m_language];
 
   // Connect FTP communicator signals
   connect(m_ftpCommunicator, &FtpCommunicator::connected, this, &MainWindow::onFtpConnected);
@@ -411,8 +476,10 @@ MainWindow::createUi()
   QHBoxLayout *rightLayout = new QHBoxLayout;
 
   m_langCombo = new QComboBox;
-  m_langCombo->addItems({"Svenska", "English", "Español"});
-  m_langCombo->setCurrentIndex(m_language);
+  m_langCombo->setMinimumWidth(200);
+  m_langCombo->addItems({"Choose language", "Svenska", "English", "Español", "日本語"});
+  // English (1) is the "Choose language" default; any other saved language is shown explicitly
+  m_langCombo->setCurrentIndex(m_language == 1 ? 0 : m_language + 1);
   connect(m_langCombo, QOverload<int>::of(&QComboBox::activated), this, &MainWindow::onLanguageChanged);
 
   savedSitesComboBox = new QComboBox;
@@ -645,14 +712,18 @@ MainWindow::retranslateUi()
   statusLog->setPlaceholderText(m_s->placeholderStatusLog);
   localListWidget->setHeaderLabels({m_s->colName, m_s->colSize, m_s->colDate, "MD5"});
   remoteListWidget->setHeaderLabels({m_s->colName, m_s->colSize, m_s->colDate, "MD5"});
-  m_langCombo->setCurrentIndex(m_language);
+  m_langCombo->setCurrentIndex(m_language + 1);
 }
 
 void
 MainWindow::onLanguageChanged(int index)
 {
-  m_language = index;
-  m_s = (m_language == 0) ? &s_sv : (m_language == 1) ? &s_en : &s_es;
+  constexpr int numLangs = sizeof(s_langs) / sizeof(s_langs[0]);
+  int lang = index - 1; // offset: index 0 is "Choose language"
+  if (lang < 0 || lang >= numLangs)
+    return;
+  m_language = lang;
+  m_s = s_langs[m_language];
   retranslateUi();
 }
 
