@@ -139,15 +139,12 @@ MainWindow::createUi()
   titleLabel->setAlignment(Qt::AlignCenter);
   
   QVBoxLayout *rightLayout = new QVBoxLayout;
-  QPushButton *clearLogButton = new QPushButton("Rensa logg");
-  connect(clearLogButton, &QPushButton::clicked, [this]() { statusLog->clear(); });
 
   savedSitesComboBox = new QComboBox;
   savedSitesComboBox->addItem("Sparade sajter...");
   loadSavedSites();
   connect(savedSitesComboBox, QOverload<int>::of(&QComboBox::activated), this, &MainWindow::onSavedSiteSelected);
 
-  rightLayout->addWidget(clearLogButton);
   rightLayout->addWidget(savedSitesComboBox);
 
   titleLayout->addStretch();
