@@ -50,20 +50,33 @@ jobs:
     - name: Package with linuxdeploy (AppImage)
       run: |
         mkdir dist
-        
+
         # Download linuxdeploy and the Qt plugin
         wget -c -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
         wget -c -q "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
-        
+
         chmod +x linuxdeploy-x86_64.AppImage
         chmod +x linuxdeploy-plugin-qt-x86_64.AppImage
-        
+
+        # Required to run AppImages on ubuntu-latest without FUSE installed
+        export APPIMAGE_EXTRACT_AND_RUN=1
+
         # Use QT_ROOT_DIR to point to the qmake binary correctly
         export QMAKE="${{ env.QT_ROOT_DIR }}/bin/qmake"
         export EXTRA_QT_PLUGINS=platforms
-        
+
+        # Create a desktop entry file (required by linuxdeploy)
+        cat > WitechFTP.desktop << 'EOF'
+        [Desktop Entry]
+        Name=WitechFTP
+        Exec=WitechFTP
+        Icon=ftp-icon
+        Type=Application
+        Categories=Network;
+        EOF
+
         # Bundle everything into an AppImage
-        ./linuxdeploy-x86_64.AppImage --appdir dist -e build/WitechFTP --plugin qt --output appimage
+        ./linuxdeploy-x86_64.AppImage --appdir dist -e build/WitechFTP -d WitechFTP.desktop -i src/ftp-icon.png --plugin qt --output appimage
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
