@@ -21,7 +21,7 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential libgl1-mesa-dev xorg-dev libxkbcommon-dev libx11-xcb-dev libxcb-glx0-dev wget
+        sudo apt-get install -y build-essential libgl1-mesa-dev xorg-dev libxkbcommon-dev libx11-xcb-dev libxcb-glx0-dev libxcb-cursor0 wget
 
     - name: Install Qt
       id: install-qt
@@ -61,7 +61,7 @@ jobs:
         # Required to run AppImages on ubuntu-latest without FUSE installed
         export APPIMAGE_EXTRACT_AND_RUN=1
 
-        export EXTRA_QT_PLUGINS=platforms
+        export EXTRA_QT_MODULES=platforms
 
         # Create a desktop entry file (required by linuxdeploy)
         cat > WitechFTP.desktop << 'EOF'
