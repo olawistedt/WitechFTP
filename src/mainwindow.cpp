@@ -721,16 +721,7 @@ MainWindow::createUi()
               QMessageBox::warning(this, m_s->dlgNotConnTitle, m_s->dlgNotConnUploadMsg);
               return;
             }
-            for (const QString &path : paths)
-            {
-              QFileInfo info(path);
-              if (!info.exists())
-                continue;
-              if (info.isDir())
-                uploadFolder(path);
-              else
-                uploadFile(path);
-            }
+            m_ftpCommunicator->uploadItems(paths, m_ftpCommunicator->getCurrentPath());
           });
 
   connect(localTree, &FileTreeWidget::remoteItemsDropped, this,

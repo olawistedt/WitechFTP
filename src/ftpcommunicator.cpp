@@ -943,6 +943,44 @@ FtpCommunicator::uploadFolder(const QString &localPath, const QString &remotePat
 }
 
 void
+FtpCommunicator::uploadItems(const QStringList &localPaths, const QString &remotePath)
+{
+  m_uploadQueue.clear();
+
+  std::function<void(const QString &, const QString &)> enqueueDir =
+      [this, &enqueueDir](const QString &localDir, const QString &remoteDir)
+  {
+    QDir dir(localDir);
+    if (!dir.exists())
+      return;
+
+    m_uploadQueue.enqueue({ FtpUploadCommand::CreateDirectory, localDir, remoteDir });
+
+    for (const QFileInfo &file : dir.entryInfoList(QDir::Files))
+      m_uploadQueue.enqueue(
+          { FtpUploadCommand::UploadFile, file.filePath(), remoteDir + "/" + file.fileName() });
+
+    for (const QFileInfo &subDir : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot))
+      enqueueDir(subDir.filePath(), remoteDir + "/" + subDir.fileName());
+  };
+
+  for (const QString &localPath : localPaths)
+  {
+    QFileInfo info(localPath);
+    if (!info.exists())
+      continue;
+
+    QString base = remotePath.endsWith('/') ? remotePath : remotePath + "/";
+    if (info.isDir())
+      enqueueDir(localPath, base + info.fileName());
+    else
+      m_uploadQueue.enqueue({ FtpUploadCommand::UploadFile, localPath, base + info.fileName() });
+  }
+
+  processUploadQueue();
+}
+
+void
 FtpCommunicator::downloadFile(const QString &fileName, const QString &localDir)
 {
   QString localFilePath = localDir + "/" + fileName;

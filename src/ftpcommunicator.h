@@ -35,6 +35,7 @@ public:
   void getCurrentDirectory();
   void uploadFile(const QString &localPath, const QString &remotePath);
   void uploadFolder(const QString &localPath, const QString &remotePath);
+  void uploadItems(const QStringList &localPaths, const QString &remotePath);
   void downloadFile(const QString &fileName, const QString &localDir);
   void downloadFolder(const QString &remoteFolderName, const QString &localDir);
   void downloadItems(const QStringList &names, const QString &localDir);
