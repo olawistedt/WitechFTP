@@ -18,7 +18,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Lägg till källkodsfiler
-add_executable(WitechFTP WIN32
+add_executable(WitechFTP WIN32 MACOSX_BUNDLE
     src/main.cpp
     src/mainwindow.cpp
     src/mainwindow.h
@@ -29,6 +29,14 @@ add_executable(WitechFTP WIN32
     src/resources.qrc
     src/appicon.rc
 )
+
+if(APPLE)
+    set_target_properties(WitechFTP PROPERTIES
+        MACOSX_BUNDLE_GUI_IDENTIFIER "se.witech.WitechFTP"
+        MACOSX_BUNDLE_BUNDLE_VERSION "1.0"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
+    )
+endif()
 
 # Länka mot Qt-moduler
 target_link_libraries(WitechFTP PRIVATE
