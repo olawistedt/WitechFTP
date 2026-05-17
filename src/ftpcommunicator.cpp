@@ -7,6 +7,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QDateTime>
+#include <QTimeZone>
 #include <QRegularExpression>
 #include <QTcpSocket>
 #include <QTextStream>
