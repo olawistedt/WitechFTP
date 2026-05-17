@@ -436,8 +436,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   setWindowIcon(QIcon(":/ftp-icon.png"));
 
   QSettings settings(QDir::homePath() + "/.WitechFTP/settings.ini", QSettings::IniFormat);
-  hostLineEdit->setText(settings.value("lastHost", "ftp.witech.se").toString());
-  usernameLineEdit->setText(settings.value("lastUsername", "witech.se").toString());
+  hostLineEdit->setText(settings.value("lastHost", "").toString());
+  usernameLineEdit->setText(settings.value("lastUsername", "").toString());
   if (passwordLineEdit->text().isEmpty())
     passwordLineEdit->setText(settings.value("lastPassword").toString());
 
