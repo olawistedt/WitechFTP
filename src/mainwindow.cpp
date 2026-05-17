@@ -88,6 +88,8 @@ struct LangStrings {
   const char *wordFileDef;
   const char *dlgDeleteTitle;
   const char *dlgDeleteMsg;
+  const char *dlgDeleteMultiTitle;
+  const char *dlgDeleteMultiMsg;
   // Dialogs – errors
   const char *dlgErrTitle;
   const char *dlgErrDeleteMsg;
@@ -158,6 +160,8 @@ static const LangStrings s_sv = {
   "filen",
   "Ta bort %1",
   "Är du säker på att du vill ta bort %1 '%2'?",
+  "Ta bort markerade",
+  "Är du säker på att du vill ta bort %1 markerade objekt?",
   "Fel",
   "Kunde inte ta bort %1: %2",
   "Kunde inte skapa mappen.",
@@ -221,6 +225,8 @@ static const LangStrings s_en = {
   "the file",
   "Delete %1",
   "Are you sure you want to delete %1 '%2'?",
+  "Delete selected",
+  "Are you sure you want to delete %1 selected items?",
   "Error",
   "Could not delete %1: %2",
   "Could not create the folder.",
@@ -284,6 +290,8 @@ static const LangStrings s_es = {
   "el archivo",
   "Eliminar %1",
   "¿Estás seguro de que quieres eliminar %1 '%2'?",
+  "Eliminar seleccionados",
+  "¿Estás seguro de que quieres eliminar %1 elementos seleccionados?",
   "Error",
   "No se pudo eliminar %1: %2",
   "No se pudo crear la carpeta.",
@@ -347,6 +355,8 @@ static const LangStrings s_ja = {
   "ファイル",
   "%1を削除",
   "%1 '%2' を削除してもよろしいですか?",
+  "選択項目を削除",
+  "選択された%1個のアイテムを削除してもよろしいですか?",
   "エラー",
   "%1を削除できませんでした: %2",
   "フォルダを作成できませんでした。",
@@ -574,6 +584,8 @@ MainWindow::createUi()
   localListWidget->setIconSize(QSize(16, 16));
   localListWidget->setRootIsDecorated(false);
   localListWidget->setSortingEnabled(true);
+  localListWidget->setSelectionMode(QAbstractItemView::ExtendedSelection);
+  localListWidget->setSelectionBehavior(QAbstractItemView::SelectRows);
   localListWidget->header()->setSortIndicatorShown(true);
   localListWidget->sortByColumn(0, Qt::AscendingOrder);
   localLayout->addWidget(localListWidget);
@@ -598,6 +610,8 @@ MainWindow::createUi()
   remoteListWidget->setIconSize(QSize(16, 16));
   remoteListWidget->setRootIsDecorated(false);
   remoteListWidget->setSortingEnabled(true);
+  remoteListWidget->setSelectionMode(QAbstractItemView::ExtendedSelection);
+  remoteListWidget->setSelectionBehavior(QAbstractItemView::SelectRows);
   remoteListWidget->header()->setSortIndicatorShown(true);
   remoteListWidget->sortByColumn(0, Qt::AscendingOrder);
   remoteLayout->addWidget(remoteListWidget);
@@ -1587,49 +1601,74 @@ MainWindow::eventFilter(QObject *obj, QEvent *event)
 void
 MainWindow::deleteLocalItemDirectly()
 {
-  QTreeWidgetItem *item = localListWidget->currentItem();
-  if (!item)
+  QList<QTreeWidgetItem *> selected = localListWidget->selectedItems();
+
+  // Collect valid paths, skipping ".." navigation items
+  QStringList paths;
+  for (QTreeWidgetItem *item : selected)
+  {
+    QString itemPath = item->data(0, Qt::UserRole).toString();
+    if (!itemPath.isEmpty() && itemPath != "..")
+      paths.append(itemPath);
+  }
+
+  if (paths.isEmpty())
     return;
 
-  QString itemPath = item->data(0, Qt::UserRole).toString();
-
-  // Don't delete ".." or drive navigation items
-  if (itemPath.isEmpty() || itemPath == "..")
-    return;
-
-  QFileInfo info(itemPath);
-  QString typeWord    = info.isDir() ? m_s->wordFolder    : m_s->wordFile;
-  QString typeWordDef = info.isDir() ? m_s->wordFolderDef : m_s->wordFileDef;
+  // Build confirmation dialog
+  QString title;
+  QString msg;
+  if (paths.size() == 1)
+  {
+    QFileInfo info(paths.first());
+    QString typeWord    = info.isDir() ? m_s->wordFolder    : m_s->wordFile;
+    QString typeWordDef = info.isDir() ? m_s->wordFolderDef : m_s->wordFileDef;
+    title = QString(m_s->dlgDeleteTitle).arg(typeWord);
+    msg   = QString(m_s->dlgDeleteMsg).arg(typeWordDef, info.fileName());
+  }
+  else
+  {
+    title = m_s->dlgDeleteMultiTitle;
+    msg   = QString(m_s->dlgDeleteMultiMsg).arg(paths.size());
+  }
 
   QMessageBox::StandardButton reply =
-      QMessageBox::question(this,
-                            QString(m_s->dlgDeleteTitle).arg(typeWord),
-                            QString(m_s->dlgDeleteMsg).arg(typeWordDef, info.fileName()),
-                            QMessageBox::Yes | QMessageBox::No);
+      QMessageBox::question(this, title, msg, QMessageBox::Yes | QMessageBox::No);
 
   if (reply != QMessageBox::Yes)
     return;
 
-  bool success = false;
-  if (info.isDir())
+  QStringList failures;
+  for (const QString &path : paths)
   {
-    QDir dir(itemPath);
-    success = dir.removeRecursively();
-  }
-  else
-  {
-    success = QFile::remove(itemPath);
+    QFileInfo info(path);
+    QString typeWordDef = info.isDir() ? m_s->wordFolderDef : m_s->wordFileDef;
+
+    bool success = false;
+    if (info.isDir())
+    {
+      QDir dir(path);
+      success = dir.removeRecursively();
+    }
+    else
+    {
+      success = QFile::remove(path);
+    }
+
+    if (success)
+      logStatus(QString(m_s->logDeleted).arg(typeWordDef, info.fileName()));
+    else
+      failures.append(info.fileName());
   }
 
-  if (!success)
+  if (!failures.isEmpty())
   {
-    QMessageBox::critical(this, m_s->dlgErrTitle, QString(m_s->dlgErrDeleteMsg).arg(typeWordDef, info.fileName()));
+    QMessageBox::critical(this,
+                          m_s->dlgErrTitle,
+                          QString(m_s->dlgErrDeleteMsg).arg("", failures.join(", ")));
   }
-  else
-  {
-    logStatus(QString(m_s->logDeleted).arg(typeWordDef, info.fileName()));
-    populateLocalList(m_localCurrentPath);
-  }
+
+  populateLocalList(m_localCurrentPath);
 }
 
 void
@@ -1638,38 +1677,51 @@ MainWindow::deleteRemoteItemDirectly()
   if (!m_ftpCommunicator->isConnected())
     return;
 
-  QTreeWidgetItem *item = remoteListWidget->currentItem();
-  if (!item)
+  QList<QTreeWidgetItem *> selected = remoteListWidget->selectedItems();
+
+  // Collect valid names, skipping ".." navigation items
+  QStringList names;
+  for (QTreeWidgetItem *item : selected)
+  {
+    QString itemName = item->data(0, Qt::UserRole).toString();
+    if (itemName.isEmpty())
+      itemName = item->text(0);
+    if (!itemName.isEmpty() && itemName != "..")
+      names.append(itemName);
+  }
+
+  if (names.isEmpty())
     return;
 
-  QString itemName = item->data(0, Qt::UserRole).toString();
-  if (itemName.isEmpty())
-    itemName = item->text(0);
-
-  // Don't delete ".." navigation item
-  if (itemName.isEmpty() || itemName == "..")
-    return;
-
-  bool isDirectory = m_ftpCommunicator->isDirectory(itemName);
-  QString typeWord    = isDirectory ? m_s->wordFolder    : m_s->wordFile;
-  QString typeWordDef = isDirectory ? m_s->wordFolderDef : m_s->wordFileDef;
+  // Build confirmation dialog
+  QString title;
+  QString msg;
+  if (names.size() == 1)
+  {
+    bool isDirectory    = m_ftpCommunicator->isDirectory(names.first());
+    QString typeWord    = isDirectory ? m_s->wordFolder    : m_s->wordFile;
+    QString typeWordDef = isDirectory ? m_s->wordFolderDef : m_s->wordFileDef;
+    title = QString(m_s->dlgDeleteTitle).arg(typeWord);
+    msg   = QString(m_s->dlgDeleteMsg).arg(typeWordDef, names.first());
+  }
+  else
+  {
+    title = m_s->dlgDeleteMultiTitle;
+    msg   = QString(m_s->dlgDeleteMultiMsg).arg(names.size());
+  }
 
   QMessageBox::StandardButton reply =
-      QMessageBox::question(this,
-                            QString(m_s->dlgDeleteTitle).arg(typeWord),
-                            QString(m_s->dlgDeleteMsg).arg(typeWordDef, itemName),
-                            QMessageBox::Yes | QMessageBox::No);
+      QMessageBox::question(this, title, msg, QMessageBox::Yes | QMessageBox::No);
 
   if (reply != QMessageBox::Yes)
     return;
 
-  // Delete the file or folder
-  if (isDirectory)
+  // Queue all deletes - FtpCommunicator processes them sequentially
+  for (const QString &name : names)
   {
-    deleteRemoteDirectoryConfirmed(itemName);
-  }
-  else
-  {
-    deleteRemoteFileConfirmed(itemName);
+    if (m_ftpCommunicator->isDirectory(name))
+      deleteRemoteDirectoryConfirmed(name);
+    else
+      deleteRemoteFileConfirmed(name);
   }
 }
