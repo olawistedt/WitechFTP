@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "ftpcommunicator.h"
+#include "filetreewidget.h"
 
 #include <QApplication>
 #include <QCryptographicHash>
@@ -574,7 +575,8 @@ MainWindow::createUi()
   localPathEdit->setText(localStartPath);
   localLayout->addWidget(localPathEdit);
 
-  localListWidget = new QTreeWidget(localWidget);
+  auto *localTree = new FileTreeWidget(FileTreeWidget::Local, localWidget);
+  localListWidget = localTree;
   localListWidget->setHeaderLabels({m_s->colName, m_s->colSize, m_s->colDate, "MD5"});
   localListWidget->setColumnWidth(0, 200);
   localListWidget->setColumnWidth(1, 80);
@@ -600,7 +602,8 @@ MainWindow::createUi()
   remotePathEdit->setPlaceholderText(m_s->placeholderRemotePath);
   remoteLayout->addWidget(remotePathEdit);
 
-  remoteListWidget = new QTreeWidget(remoteWidget);
+  auto *remoteTree = new FileTreeWidget(FileTreeWidget::Remote, remoteWidget);
+  remoteListWidget = remoteTree;
   remoteListWidget->setHeaderLabels({m_s->colName, m_s->colSize, m_s->colDate, "MD5"});
   remoteListWidget->setColumnWidth(0, 200);
   remoteListWidget->setColumnWidth(1, 80);
@@ -709,6 +712,39 @@ MainWindow::createUi()
             renameRemoteItem(itemName);
     }
   });
+
+  // Drag-and-drop transfers between the two trees
+  connect(remoteTree, &FileTreeWidget::localItemsDropped, this,
+          [this](const QStringList &paths) {
+            if (!m_ftpCommunicator->isConnected())
+            {
+              QMessageBox::warning(this, m_s->dlgNotConnTitle, m_s->dlgNotConnUploadMsg);
+              return;
+            }
+            for (const QString &path : paths)
+            {
+              QFileInfo info(path);
+              if (!info.exists())
+                continue;
+              if (info.isDir())
+                uploadFolder(path);
+              else
+                uploadFile(path);
+            }
+          });
+
+  connect(localTree, &FileTreeWidget::remoteItemsDropped, this,
+          [this](const QStringList &names) {
+            if (!m_ftpCommunicator->isConnected())
+              return;
+            for (const QString &name : names)
+            {
+              if (m_ftpCommunicator->isDirectory(name))
+                downloadFolder(name);
+              else
+                downloadFile(name);
+            }
+          });
 
   populateLocalList(localStartPath);
 }

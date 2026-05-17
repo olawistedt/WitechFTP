@@ -24,6 +24,8 @@ add_executable(WitechFTP WIN32
     src/mainwindow.h
     src/ftpcommunicator.cpp
     src/ftpcommunicator.h
+    src/filetreewidget.cpp
+    src/filetreewidget.h
     src/resources.qrc
     src/appicon.rc
 )
