@@ -651,7 +651,7 @@ MainWindow::createUi()
 
   // --- Connections ---
   connect(connectButton, &QPushButton::clicked, this, &MainWindow::connectOrDisconnect);
-  connect(remoteListWidget, &QTreeWidget::itemClicked, this, &MainWindow::onRemoteItemClicked);
+  connect(remoteListWidget, &QTreeWidget::itemDoubleClicked, this, &MainWindow::onRemoteItemClicked);
   connect(localListWidget,
           &QTreeWidget::customContextMenuRequested,
           this,
@@ -660,7 +660,7 @@ MainWindow::createUi()
           &QTreeWidget::customContextMenuRequested,
           this,
           &MainWindow::showRemoteContextMenu);
-  connect(localListWidget, &QTreeWidget::itemClicked, this, &MainWindow::onLocalItemClicked);
+  connect(localListWidget, &QTreeWidget::itemDoubleClicked, this, &MainWindow::onLocalItemClicked);
 
   connect(localPathEdit, &QLineEdit::returnPressed, this, [this]() {
     QString path = localPathEdit->text().trimmed();
@@ -737,13 +737,8 @@ MainWindow::createUi()
           [this](const QStringList &names) {
             if (!m_ftpCommunicator->isConnected())
               return;
-            for (const QString &name : names)
-            {
-              if (m_ftpCommunicator->isDirectory(name))
-                downloadFolder(name);
-              else
-                downloadFile(name);
-            }
+            QString localDir = m_localCurrentPath.isEmpty() ? QDir::currentPath() : m_localCurrentPath;
+            m_ftpCommunicator->downloadItems(names, localDir);
           });
 
   populateLocalList(localStartPath);

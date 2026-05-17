@@ -1190,6 +1190,35 @@ FtpCommunicator::downloadFolder(const QString &remoteFolderName, const QString &
 }
 
 void
+FtpCommunicator::downloadItems(const QStringList &names, const QString &localDir)
+{
+  m_downloadInProgress = true;
+  m_downloadQueue.clear();
+  m_remoteDirsToExploreForDownload.clear();
+  m_localBaseDirForDownload = localDir;
+  m_baseRemotePathForDownload = m_currentPath;
+
+  for (const QString &name : names)
+  {
+    QString remotePath = m_currentPath.endsWith('/')
+        ? m_currentPath + name
+        : m_currentPath + "/" + name;
+
+    if (isDirectory(name))
+    {
+      m_remoteDirsToExploreForDownload.push(remotePath);
+    }
+    else
+    {
+      QString localFilePath = QDir(localDir).filePath(name);
+      m_downloadQueue.enqueue({ FtpDownloadCommand::DownloadFile, remotePath, localFilePath });
+    }
+  }
+
+  processDownloadQueue();
+}
+
+void
 FtpCommunicator::processDownloadQueue()
 {
   if (!m_downloadInProgress)

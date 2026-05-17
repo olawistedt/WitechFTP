@@ -37,6 +37,7 @@ public:
   void uploadFolder(const QString &localPath, const QString &remotePath);
   void downloadFile(const QString &fileName, const QString &localDir);
   void downloadFolder(const QString &remoteFolderName, const QString &localDir);
+  void downloadItems(const QStringList &names, const QString &localDir);
   void deleteRemoteFile(const QString &fileName, const QString &currentPath);
   void deleteRemoteDirectory(const QString &dirName, const QString &currentPath);
   void createRemoteFolder(const QString &folderName, const QString &currentPath);

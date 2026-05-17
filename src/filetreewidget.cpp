@@ -31,9 +31,9 @@ FileTreeWidget::mimeTypes() const
 QMimeData *
 FileTreeWidget::mimeData(const QList<QTreeWidgetItem *> &items) const
 {
-  // Always use the full current selection so the drag includes every
-  // selected item even if Qt only passed a subset.
-  QList<QTreeWidgetItem *> source = selectedItems();
+  // Use the snapshot captured at press time so the full selection is included
+  // even if Qt has already narrowed selectedItems() to only the dragged item.
+  QList<QTreeWidgetItem *> source = m_dragSnapshot.isEmpty() ? selectedItems() : m_dragSnapshot;
   if (source.isEmpty())
     source = items;
 
@@ -72,32 +72,22 @@ FileTreeWidget::mimeData(const QList<QTreeWidgetItem *> &items) const
 void
 FileTreeWidget::mousePressEvent(QMouseEvent *event)
 {
-  // If the user clicks on an unselected item while a multi-selection is
-  // active, Qt would normally clear the selection and only keep the
-  // clicked item - causing a subsequent drag to transfer only that one.
-  // Preserve the previous selection (plus the clicked item) so drag-and-drop
-  // works regardless of which item is grabbed.
-  QList<QTreeWidgetItem *> previous;
-  bool restore = false;
-  if (event->button() == Qt::LeftButton &&
-      !(event->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier)))
-  {
-    QTreeWidgetItem *item = itemAt(event->pos());
-    if (item && !item->isSelected() && selectedItems().size() > 1)
-    {
-      previous = selectedItems();
-      previous.append(item);
-      restore = true;
-    }
-  }
+  // Snapshot the selection before Qt has a chance to change it.
+  // mimeData() will use this snapshot so a drag carries the full selection
+  // regardless of which item the user grabbed.
+  if (event->button() == Qt::LeftButton && itemAt(event->pos()))
+    m_dragSnapshot = selectedItems();
+  else
+    m_dragSnapshot.clear();
 
   QTreeWidget::mousePressEvent(event);
+}
 
-  if (restore)
-  {
-    for (QTreeWidgetItem *item : previous)
-      item->setSelected(true);
-  }
+void
+FileTreeWidget::mouseReleaseEvent(QMouseEvent *event)
+{
+  m_dragSnapshot.clear();
+  QTreeWidget::mouseReleaseEvent(event);
 }
 
 static bool

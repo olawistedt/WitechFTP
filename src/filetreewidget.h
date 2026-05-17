@@ -23,12 +23,14 @@ protected:
   QStringList mimeTypes() const override;
   QMimeData *mimeData(const QList<QTreeWidgetItem *> &items) const override;
   void mousePressEvent(QMouseEvent *event) override;
+  void mouseReleaseEvent(QMouseEvent *event) override;
   void dragEnterEvent(QDragEnterEvent *event) override;
   void dragMoveEvent(QDragMoveEvent *event) override;
   void dropEvent(QDropEvent *event) override;
 
 private:
   Kind m_kind;
+  QList<QTreeWidgetItem *> m_dragSnapshot;
 };
 
 #endif  // FILETREEWIDGET_H
