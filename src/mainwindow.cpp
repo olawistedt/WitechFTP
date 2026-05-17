@@ -480,7 +480,7 @@ MainWindow::createUi()
   QGridLayout *titleGrid = new QGridLayout(titleWidget);
   titleGrid->setContentsMargins(5, 5, 5, 5);
 
-  QLabel *titleLabel = new QLabel("WitechFTP v1.4-beta");
+  QLabel *titleLabel = new QLabel("WitechFTP v1.4-beta1");
   QFont titleFont("Arial", 24, QFont::Bold);
   titleLabel->setFont(titleFont);
   titleLabel->setAlignment(Qt::AlignCenter);
