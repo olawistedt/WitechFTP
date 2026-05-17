@@ -925,14 +925,14 @@ FtpCommunicator::uploadFolder(const QString &localPath, const QString &remotePat
     m_uploadQueue.enqueue({ FtpUploadCommand::CreateDirectory, localDir, remoteDir });
 
     // Enqueue files for upload
-    for (const QFileInfo &file : dir.entryInfoList(QDir::Files))
+    for (const QFileInfo &file : dir.entryInfoList(QDir::Files | QDir::Hidden))
     {
       m_uploadQueue.enqueue(
           { FtpUploadCommand::UploadFile, file.filePath(), remoteDir + "/" + file.fileName() });
     }
 
     // Recurse into subdirectories
-    for (const QFileInfo &subDir : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot))
+    for (const QFileInfo &subDir : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden))
     {
       populateQueue(subDir.filePath(), remoteDir + "/" + subDir.fileName());
     }
@@ -956,11 +956,11 @@ FtpCommunicator::uploadItems(const QStringList &localPaths, const QString &remot
 
     m_uploadQueue.enqueue({ FtpUploadCommand::CreateDirectory, localDir, remoteDir });
 
-    for (const QFileInfo &file : dir.entryInfoList(QDir::Files))
+    for (const QFileInfo &file : dir.entryInfoList(QDir::Files | QDir::Hidden))
       m_uploadQueue.enqueue(
           { FtpUploadCommand::UploadFile, file.filePath(), remoteDir + "/" + file.fileName() });
 
-    for (const QFileInfo &subDir : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot))
+    for (const QFileInfo &subDir : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden))
       enqueueDir(subDir.filePath(), remoteDir + "/" + subDir.fileName());
   };
 
