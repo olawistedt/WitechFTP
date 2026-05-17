@@ -50,6 +50,7 @@ jobs:
     - name: Package with linuxdeploy (AppImage)
       run: |
         mkdir dist
+        
         # Download linuxdeploy and the Qt plugin
         wget -c -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
         wget -c -q "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
@@ -57,8 +58,8 @@ jobs:
         chmod +x linuxdeploy-x86_64.AppImage
         chmod +x linuxdeploy-plugin-qt-x86_64.AppImage
         
-        # Point the plugin to the Qt installation from the GitHub Action step
-        export QMAKE="${{ steps.install-qt.outputs.qt_dir }}/bin/qmake"
+        # Use QT_ROOT_DIR to point to the qmake binary correctly
+        export QMAKE="${{ env.QT_ROOT_DIR }}/bin/qmake"
         export EXTRA_QT_PLUGINS=platforms
         
         # Bundle everything into an AppImage
