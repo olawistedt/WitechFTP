@@ -1,3 +1,4 @@
+# .github/workflows/linux-build.yml
 name: Linux Build
 
 on:
@@ -5,6 +6,9 @@ on:
     branches: [ "main", "master" ]
   pull_request:
     branches: [ "main", "master" ]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
@@ -14,10 +18,15 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Install Qt and build tools
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libgl1-mesa-dev xorg-dev libxkbcommon-dev libx11-xcb-dev libxcb-glx0-dev
+
+    - name: Install Qt
       uses: jurplel/install-qt-action@v3
       with:
-        version: '6.5.0' # Change to your required Qt version
+        version: '6.5.0'
         host: 'linux'
         target: 'desktop'
         arch: 'gcc_64'
@@ -31,3 +40,14 @@ jobs:
 
     - name: Build project
       run: cmake --build build --config Release
+
+    - name: Run tests
+      run: |
+        cd build
+        ctest --output-on-failure
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: qt-linux-binary
+        path: build/
