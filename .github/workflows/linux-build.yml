@@ -61,8 +61,8 @@ jobs:
         # Required to run AppImages on ubuntu-latest without FUSE installed
         export APPIMAGE_EXTRACT_AND_RUN=1
 
-        # Use QT_ROOT_DIR to point to the qmake binary correctly
-        export QMAKE="$QT_ROOT_DIR/bin/qmake"
+        # Use the install-qt-action step output to locate qmake
+        export QMAKE="${{ steps.install-qt.outputs.qt-path }}/bin/qmake"
         export EXTRA_QT_PLUGINS=platforms
 
         # Create a desktop entry file (required by linuxdeploy)
