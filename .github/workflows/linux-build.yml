@@ -62,7 +62,7 @@ jobs:
         export APPIMAGE_EXTRACT_AND_RUN=1
 
         # Use QT_ROOT_DIR to point to the qmake binary correctly
-        export QMAKE="${{ env.QT_ROOT_DIR }}/bin/qmake"
+        export QMAKE="$QT_ROOT_DIR/bin/qmake"
         export EXTRA_QT_PLUGINS=platforms
 
         # Create a desktop entry file (required by linuxdeploy)
