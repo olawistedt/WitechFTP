@@ -867,23 +867,7 @@ MainWindow::connectOrDisconnect()
     return;
   }
 
-  // Check if password field is empty, if so, prompt user
   QString password = passwordLineEdit->text();
-  if (password.isEmpty())
-  {
-    bool ok;
-    password = QInputDialog::getText(this,
-                                     m_s->dlgFtpPasswordTitle,
-                                     m_s->dlgFtpPasswordPrompt,
-                                     QLineEdit::Password,
-                                     "",
-                                     &ok);
-    if (!ok || password.isEmpty())
-    {
-      return;  // User cancelled or didn't enter password
-    }
-    passwordLineEdit->setText(password);
-  }
 
   logStatus(QString(m_s->dlgConnecting).arg(hostLineEdit->text()));
   m_ftpCommunicator->connectToHost(hostLineEdit->text(), usernameLineEdit->text(), password);
