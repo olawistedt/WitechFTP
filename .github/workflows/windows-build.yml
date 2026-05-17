@@ -42,11 +42,14 @@ jobs:
         cd build
         ctest --output-on-failure -C Release
 
+    - name: Setup MSVC environment
+      uses: ilammy/msvc-dev-cmd@v1
+
     - name: Package with windeployqt
       run: |
         mkdir deploy
         Copy-Item build\Release\WitechFTP.exe deploy\
-        windeployqt --release deploy\WitechFTP.exe
+        windeployqt --release --no-translations deploy\WitechFTP.exe
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
