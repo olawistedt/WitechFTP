@@ -21,9 +21,10 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential libgl1-mesa-dev xorg-dev libxkbcommon-dev libx11-xcb-dev libxcb-glx0-dev
+        sudo apt-get install -y build-essential libgl1-mesa-dev xorg-dev libxkbcommon-dev libx11-xcb-dev libxcb-glx0-dev wget
 
     - name: Install Qt
+      id: install-qt
       uses: jurplel/install-qt-action@v3
       with:
         version: '6.5.0'
@@ -46,8 +47,25 @@ jobs:
         cd build
         ctest --output-on-failure
 
+    - name: Package with linuxdeploy (AppImage)
+      run: |
+        mkdir dist
+        # Download linuxdeploy and the Qt plugin
+        wget -c -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+        wget -c -q "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
+        
+        chmod +x linuxdeploy-x86_64.AppImage
+        chmod +x linuxdeploy-plugin-qt-x86_64.AppImage
+        
+        # Point the plugin to the Qt installation from the GitHub Action step
+        export QMAKE="${{ steps.install-qt.outputs.qt_dir }}/bin/qmake"
+        export EXTRA_QT_PLUGINS=platforms
+        
+        # Bundle everything into an AppImage
+        ./linuxdeploy-x86_64.AppImage --appdir dist -e build/WitechFTP --plugin qt --output appimage
+
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: qt-linux-binary
-        path: build/
+        name: WitechFTP-Linux-AppImage
+        path: "*.AppImage"
