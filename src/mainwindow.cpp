@@ -814,7 +814,7 @@ MainWindow::populateLocalList(const QString &path)
   };
 
   // Directories
-  for (const QFileInfo &info : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot))
+  for (const QFileInfo &info : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden))
   {
     auto *item = new FileTreeItem(localListWidget, FileTreeItem::Directory);
     item->setText(0, info.fileName());
@@ -824,7 +824,7 @@ MainWindow::populateLocalList(const QString &path)
   }
 
   // Files
-  for (const QFileInfo &info : dir.entryInfoList(QDir::Files))
+  for (const QFileInfo &info : dir.entryInfoList(QDir::Files | QDir::Hidden))
   {
     auto *item = new FileTreeItem(localListWidget, FileTreeItem::File);
     item->setText(0, info.fileName());

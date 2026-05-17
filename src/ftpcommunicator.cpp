@@ -527,17 +527,17 @@ FtpCommunicator::onDataConnected()
   if (m_waitingForDataConnection && m_lastCommand == FtpCommand::List)
   {
     m_waitingForDataConnection = false;
-    sendCommand("LIST");
+    sendCommand("LIST -a");
   }
   else if (m_waitingForDataConnection && m_lastCommand == FtpCommand::ListForDelete)
   {
     m_waitingForDataConnection = false;
-    sendCommand("LIST " + m_pendingDeleteListPath);
+    sendCommand("LIST -a " + m_pendingDeleteListPath);
   }
   else if (m_waitingForDataConnection && m_lastCommand == FtpCommand::ListForDownload)
   {
     m_waitingForDataConnection = false;
-    sendCommand("LIST " + m_currentExploreDirForDownload);
+    sendCommand("LIST -a " + m_currentExploreDirForDownload);
   }
   else if (m_waitingForDataConnection && m_lastCommand == FtpCommand::Stor)
   {
