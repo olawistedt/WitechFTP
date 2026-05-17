@@ -916,6 +916,8 @@ MainWindow::onFtpDisconnected()
 void
 MainWindow::onFtpConnectionError(const QString &error)
 {
+  if (hostLineEdit->text().trimmed().isEmpty())
+    return;
   QMessageBox::critical(this, m_s->dlgConnErrTitle, error);
 }
 
