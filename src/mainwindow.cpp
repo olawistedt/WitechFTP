@@ -1724,12 +1724,13 @@ MainWindow::deleteRemoteItemDirectly()
   if (reply != QMessageBox::Yes)
     return;
 
-  // Queue all deletes - FtpCommunicator processes them sequentially
+  QStringList files, dirs;
   for (const QString &name : names)
   {
     if (m_ftpCommunicator->isDirectory(name))
-      deleteRemoteDirectoryConfirmed(name);
+      dirs.append(name);
     else
-      deleteRemoteFileConfirmed(name);
+      files.append(name);
   }
+  m_ftpCommunicator->deleteRemoteItems(files, dirs, m_ftpCommunicator->getCurrentPath());
 }

@@ -41,6 +41,7 @@ public:
   void downloadItems(const QStringList &names, const QString &localDir);
   void deleteRemoteFile(const QString &fileName, const QString &currentPath);
   void deleteRemoteDirectory(const QString &dirName, const QString &currentPath);
+  void deleteRemoteItems(const QStringList &files, const QStringList &dirs, const QString &currentPath);
   void createRemoteFolder(const QString &folderName, const QString &currentPath);
   void renameRemote(const QString &oldName, const QString &newName, const QString &currentPath);
   void abortTransfer();
