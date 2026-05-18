@@ -1062,6 +1062,27 @@ FtpCommunicator::deleteRemoteDirectory(const QString &dirName, const QString &cu
 }
 
 void
+FtpCommunicator::deleteRemoteItems(const QStringList &files, const QStringList &dirs, const QString &currentPath)
+{
+  m_remoteDeleteInProgress = true;
+  m_remoteDeleteQueue.clear();
+  m_remoteDirsToList.clear();
+  m_remoteDirsToDelete.clear();
+
+  auto makePath = [&](const QString &name) {
+    return currentPath.endsWith('/') ? currentPath + name : currentPath + "/" + name;
+  };
+
+  for (const QString &file : files)
+    m_remoteDeleteQueue.enqueue({ FtpDeleteCommand::DeleteFile, makePath(file) });
+
+  for (const QString &dir : dirs)
+    m_remoteDeleteQueue.enqueue({ FtpDeleteCommand::DeleteDir, makePath(dir) });
+
+  processRemoteDeleteQueue();
+}
+
+void
 FtpCommunicator::createRemoteFolder(const QString &folderName, const QString &currentPath)
 {
   QString remotePath;
