@@ -2,17 +2,16 @@
 
 #include <QAbstractSocket>
 #include <QByteArray>
+#include <QDateTime>
 #include <QDebug>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QDateTime>
-#include <QTimeZone>
 #include <QRegularExpression>
 #include <QTcpSocket>
 #include <QTextStream>
 #include <QTimer>
-#include <QUrl>
+#include <QTimeZone>
 #include <functional>
 
 QString
@@ -272,7 +271,6 @@ FtpCommunicator::onControlReadyRead()
     }
     else if (responseCode == 257 && m_lastCommand == FtpCommand::MkdManual)
     {  // MKD success (manual folder creation) – refresh listing
-      emit folderCreated();
       m_lastCommand = FtpCommand::List;
       sendCommand("PASV");
     }
@@ -335,7 +333,6 @@ FtpCommunicator::onControlReadyRead()
     else if (responseCode == 250 && m_lastCommand == FtpCommand::Dele)
     {  // DELE successful
       qDebug() << "File deleted successfully.";
-      m_remoteFileToDelete.clear();
       m_lastCommand = FtpCommand::None;
       if (m_remoteDeleteInProgress)
       {
@@ -368,7 +365,6 @@ FtpCommunicator::onControlReadyRead()
     else if (responseCode == 550 && m_lastCommand == FtpCommand::Dele)
     {  // DELE failed
       qDebug() << "Delete failed:" << response;
-      m_remoteFileToDelete.clear();
       m_lastCommand = FtpCommand::None;
       if (m_remoteDeleteInProgress)
       {
@@ -679,20 +675,7 @@ FtpCommunicator::onDataDisconnected()
     QString listing(m_dataBuffer);
     QStringList lines = listing.split('\n', Qt::SkipEmptyParts);
 
-    // To map remote to local, we need a base remote dir.
-    // However, for now let's just use the leaf folder name as the root locally.
-    // Wait, m_localBaseDirForDownload already points to where we want it.
-    
-    // We need to determine the local path for m_currentExploreDirForDownload
-    // If m_currentPath was /a/b and we download folder 'c', 
-    // remotePath is /a/b/c and localBaseDir is (say) C:/downloads.
-    // We want /a/b/c -> C:/downloads/c
-    // /a/b/c/d -> C:/downloads/c/d
-    
-    // Let's find the relative path from the *parent* of the original download folder.
-    // But it's easier to just pass the base remote path.
-    // For now, let's assume m_currentPath was the parent at start.
-    
+    // Map remote path to local: /base/x/y -> <localBase>/x/y
     QString baseRemotePath = m_baseRemotePathForDownload;
     if (!baseRemotePath.endsWith('/')) baseRemotePath += "/";
     
@@ -883,13 +866,6 @@ FtpCommunicator::changeDirectory(const QString &path)
 }
 
 void
-FtpCommunicator::getCurrentDirectory()
-{
-  m_lastCommand = FtpCommand::Pwd;
-  sendCommand("PWD");
-}
-
-void
 FtpCommunicator::uploadFile(const QString &localPath, const QString &remotePath)
 {
   m_uploadQueue.clear();
@@ -996,33 +972,6 @@ FtpCommunicator::downloadFile(const QString &fileName, const QString &localDir)
   // Initiate download via PASV
   m_lastCommand = FtpCommand::Retr;
   sendCommand("PASV");
-}
-
-void
-FtpCommunicator::deleteRemoteFile(const QString &fileName, const QString &currentPath)
-{
-  m_remoteFileToDelete = fileName;
-  QString remoteFilePath = joinPath(currentPath, fileName);
-
-  emit statusUpdated(QString("Raderar fil: %1").arg(remoteFilePath));
-  m_lastCommand = FtpCommand::Dele;
-  sendCommand("DELE " + remoteFilePath);
-}
-
-void
-FtpCommunicator::deleteRemoteDirectory(const QString &dirName, const QString &currentPath)
-{
-  QString remoteDirPath = joinPath(currentPath, dirName);
-
-  m_remoteDeleteInProgress = true;
-  m_remoteDeleteQueue.clear();
-  m_remoteDirsToList.clear();
-  m_remoteDirsToDelete.clear();
-
-  emit statusUpdated(QString("Add directory to delete queue: %1").arg(remoteDirPath));
-  m_remoteDeleteQueue.enqueue({ FtpDeleteCommand::DeleteDir, remoteDirPath });
-
-  processRemoteDeleteQueue();
 }
 
 void

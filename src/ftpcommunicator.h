@@ -32,15 +32,12 @@ public:
   // File operations
   void listRemoteDirectory(const QString &path);
   void changeDirectory(const QString &path);
-  void getCurrentDirectory();
   void uploadFile(const QString &localPath, const QString &remotePath);
   void uploadFolder(const QString &localPath, const QString &remotePath);
   void uploadItems(const QStringList &localPaths, const QString &remotePath);
   void downloadFile(const QString &fileName, const QString &localDir);
   void downloadFolder(const QString &remoteFolderName, const QString &localDir);
   void downloadItems(const QStringList &names, const QString &localDir);
-  void deleteRemoteFile(const QString &fileName, const QString &currentPath);
-  void deleteRemoteDirectory(const QString &dirName, const QString &currentPath);
   void deleteRemoteItems(const QStringList &files, const QStringList &dirs, const QString &currentPath);
   void createRemoteFolder(const QString &folderName, const QString &currentPath);
   void renameRemote(const QString &oldName, const QString &newName, const QString &currentPath);
@@ -75,12 +72,9 @@ signals:
   void directoryListReceived();
 
   // File operation signals
-  void uploadProgress(const QString &fileName);
   void uploadComplete();
-  void downloadProgress(const QString &fileName);
   void downloadComplete();
   void deletionComplete();
-  void folderCreated();
   void md5Received(const QString &fileName, const QString &md5);
 
 private slots:
@@ -201,7 +195,6 @@ private:
   bool m_dataDisconnected;
 
   // Delete state
-  QString m_remoteFileToDelete;
   QString m_remoteDirToDelete;
   QQueue<FtpDeleteCommand> m_remoteDeleteQueue;
   QStack<QString> m_remoteDirsToList;

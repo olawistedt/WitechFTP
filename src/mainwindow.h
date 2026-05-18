@@ -83,8 +83,8 @@ private:
   void deleteLocalPaths(const QStringList &paths);
   void deleteRemoteNames(const QStringList &names);
 
-  // Language
-  int m_language; // 0 = Swedish, 1 = English
+  // Language: index into s_langs (0=sv, 1=en, 2=es, 3=ja)
+  int m_language;
   const LangStrings *m_s;
 
   // Connection widgets

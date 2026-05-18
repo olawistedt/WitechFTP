@@ -3,9 +3,9 @@
 #include "filetreewidget.h"
 
 #include <QApplication>
+#include <QComboBox>
 #include <QCryptographicHash>
 #include <QDateTime>
-#include <QDebug>
 #include <QDir>
 #include <QEvent>
 #include <QFile>
@@ -18,8 +18,6 @@
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
-#include <QTreeWidget>
-#include <QTreeWidgetItem>
 #include <QMainWindow>
 #include <QMenu>
 #include <QMessageBox>
@@ -30,14 +28,23 @@
 #include <QShortcut>
 #include <QSplitter>
 #include <QStyle>
-#include <QTextStream>
-#include <QTimer>
 #include <QTextEdit>
+#include <QTimer>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 #include <QUrl>
+#include <QVariantMap>
 #include <QVBoxLayout>
 #include <QWidget>
-#include <QComboBox>
-#include <QVariantMap>
+
+namespace {
+QString formatSize(qint64 bytes)
+{
+  if (bytes < 1024) return QString("%1 B").arg(bytes);
+  if (bytes < 1024 * 1024) return QString("%1 KB").arg(bytes / 1024);
+  return QString("%1 MB").arg(bytes / (1024 * 1024));
+}
+}
 
 struct LangStrings {
   const char *savedSites;
@@ -803,12 +810,6 @@ MainWindow::populateLocalList(const QString &path)
   upItem->setData(0, Qt::UserRole, QString(".."));
   upItem->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
 
-  auto formatSize = [](qint64 bytes) {
-    if (bytes < 1024) return QString("%1 B").arg(bytes);
-    if (bytes < 1024 * 1024) return QString("%1 KB").arg(bytes / 1024);
-    return QString("%1 MB").arg(bytes / (1024 * 1024));
-  };
-
   // Directories
   for (const QFileInfo &info : dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden))
   {
@@ -944,12 +945,6 @@ MainWindow::onFtpDirectoryListReceived()
     upItem->setIcon(0, style()->standardIcon(QStyle::SP_DirIcon));
   }
 
-  auto formatSize = [](qint64 bytes) {
-    if (bytes < 1024) return QString("%1 B").arg(bytes);
-    if (bytes < 1024 * 1024) return QString("%1 KB").arg(bytes / 1024);
-    return QString("%1 MB").arg(bytes / (1024 * 1024));
-  };
-
   auto addItem = [&](const QString &name) {
     const FtpCommunicator::RemoteFileInfo &info = m_remoteFiles.value(name);
     auto *item = new FileTreeItem(remoteListWidget,
@@ -1018,12 +1013,6 @@ MainWindow::onFtpUploadComplete()
 {
   logStatus("Finished!");
 }
-
-// --- Old FTP Connection Slots (removed) ---
-// The following methods have been moved to FtpCommunicator and are no longer needed:
-// onControlConnected(), onControlReadyRead(), onControlDisconnected(), onControlError()
-// onDataReadyRead(), onDataConnected(), onDataDisconnected(), onDataError()
-
 
 void
 MainWindow::showLocalContextMenu(const QPoint &pos)
