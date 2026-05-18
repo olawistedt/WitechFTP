@@ -15,6 +15,16 @@
 #include <QUrl>
 #include <functional>
 
+QString
+FtpCommunicator::joinPath(const QString &parent, const QString &child)
+{
+  if (parent.isEmpty())
+    return child;
+  if (parent.endsWith('/'))
+    return parent + child;
+  return parent + '/' + child;
+}
+
 FtpCommunicator::FtpCommunicator(QObject *parent)
     : QObject(parent)
     , m_controlSocket(new QTcpSocket(this))
@@ -645,12 +655,7 @@ FtpCommunicator::onDataDisconnected()
         continue;
 
       bool isDir = parts[0].startsWith('d');
-
-      QString fullPath;
-      if (m_currentDeleteDir.endsWith('/'))
-        fullPath = m_currentDeleteDir + name;
-      else
-        fullPath = m_currentDeleteDir + "/" + name;
+      QString fullPath = joinPath(m_currentDeleteDir, name);
 
       if (isDir)
       {
@@ -712,13 +717,7 @@ FtpCommunicator::onDataDisconnected()
         continue;
 
       bool isDir = parts[0].startsWith('d');
-
-      QString remoteFullPath;
-      if (m_currentExploreDirForDownload.endsWith('/'))
-        remoteFullPath = m_currentExploreDirForDownload + name;
-      else
-        remoteFullPath = m_currentExploreDirForDownload + "/" + name;
-      
+      QString remoteFullPath = joinPath(m_currentExploreDirForDownload, name);
       QString localFullPath = QDir(localDirPath).filePath(name);
 
       if (isDir)
@@ -903,15 +902,7 @@ FtpCommunicator::uploadFolder(const QString &localPath, const QString &remotePat
 {
   m_uploadQueue.clear();
   QFileInfo fileInfo(localPath);
-  QString remoteFolderPath;
-  if (remotePath.endsWith('/'))
-  {
-    remoteFolderPath = remotePath + fileInfo.fileName();
-  }
-  else
-  {
-    remoteFolderPath = remotePath + "/" + fileInfo.fileName();
-  }
+  QString remoteFolderPath = joinPath(remotePath, fileInfo.fileName());
 
   // Helper lambda to recursively populate upload queue
   std::function<void(const QString &, const QString &)> populateQueue =
@@ -970,11 +961,11 @@ FtpCommunicator::uploadItems(const QStringList &localPaths, const QString &remot
     if (!info.exists())
       continue;
 
-    QString base = remotePath.endsWith('/') ? remotePath : remotePath + "/";
+    QString fullRemotePath = joinPath(remotePath, info.fileName());
     if (info.isDir())
-      enqueueDir(localPath, base + info.fileName());
+      enqueueDir(localPath, fullRemotePath);
     else
-      m_uploadQueue.enqueue({ FtpUploadCommand::UploadFile, localPath, base + info.fileName() });
+      m_uploadQueue.enqueue({ FtpUploadCommand::UploadFile, localPath, fullRemotePath });
   }
 
   processUploadQueue();
@@ -983,19 +974,10 @@ FtpCommunicator::uploadItems(const QStringList &localPaths, const QString &remot
 void
 FtpCommunicator::downloadFile(const QString &fileName, const QString &localDir)
 {
-  QString localFilePath = localDir + "/" + fileName;
+  QString localFilePath = QDir(localDir).filePath(fileName);
   emit statusUpdated(QString("Laddar ner: %1 → %2").arg(fileName, localFilePath));
 
-  // Construct remote file path
-  QString remoteFilePath;
-  if (m_currentPath.endsWith('/'))
-  {
-    remoteFilePath = m_currentPath + fileName;
-  }
-  else
-  {
-    remoteFilePath = m_currentPath + "/" + fileName;
-  }
+  QString remoteFilePath = joinPath(m_currentPath, fileName);
 
   // Set up the file for download
   m_fileToDownload = new QFile(localFilePath);
@@ -1020,17 +1002,7 @@ void
 FtpCommunicator::deleteRemoteFile(const QString &fileName, const QString &currentPath)
 {
   m_remoteFileToDelete = fileName;
-
-  // Construct remote file path
-  QString remoteFilePath;
-  if (currentPath.endsWith('/'))
-  {
-    remoteFilePath = currentPath + fileName;
-  }
-  else
-  {
-    remoteFilePath = currentPath + "/" + fileName;
-  }
+  QString remoteFilePath = joinPath(currentPath, fileName);
 
   emit statusUpdated(QString("Raderar fil: %1").arg(remoteFilePath));
   m_lastCommand = FtpCommand::Dele;
@@ -1040,15 +1012,7 @@ FtpCommunicator::deleteRemoteFile(const QString &fileName, const QString &curren
 void
 FtpCommunicator::deleteRemoteDirectory(const QString &dirName, const QString &currentPath)
 {
-  QString remoteDirPath;
-  if (currentPath.endsWith('/'))
-  {
-    remoteDirPath = currentPath + dirName;
-  }
-  else
-  {
-    remoteDirPath = currentPath + "/" + dirName;
-  }
+  QString remoteDirPath = joinPath(currentPath, dirName);
 
   m_remoteDeleteInProgress = true;
   m_remoteDeleteQueue.clear();
@@ -1069,15 +1033,11 @@ FtpCommunicator::deleteRemoteItems(const QStringList &files, const QStringList &
   m_remoteDirsToList.clear();
   m_remoteDirsToDelete.clear();
 
-  auto makePath = [&](const QString &name) {
-    return currentPath.endsWith('/') ? currentPath + name : currentPath + "/" + name;
-  };
-
   for (const QString &file : files)
-    m_remoteDeleteQueue.enqueue({ FtpDeleteCommand::DeleteFile, makePath(file) });
+    m_remoteDeleteQueue.enqueue({ FtpDeleteCommand::DeleteFile, joinPath(currentPath, file) });
 
   for (const QString &dir : dirs)
-    m_remoteDeleteQueue.enqueue({ FtpDeleteCommand::DeleteDir, makePath(dir) });
+    m_remoteDeleteQueue.enqueue({ FtpDeleteCommand::DeleteDir, joinPath(currentPath, dir) });
 
   processRemoteDeleteQueue();
 }
@@ -1085,11 +1045,7 @@ FtpCommunicator::deleteRemoteItems(const QStringList &files, const QStringList &
 void
 FtpCommunicator::createRemoteFolder(const QString &folderName, const QString &currentPath)
 {
-  QString remotePath;
-  if (currentPath.endsWith('/'))
-    remotePath = currentPath + folderName;
-  else
-    remotePath = currentPath + "/" + folderName;
+  QString remotePath = joinPath(currentPath, folderName);
 
   emit statusUpdated(QString("Skapar mapp: %1").arg(remotePath));
   m_lastCommand = FtpCommand::MkdManual;
@@ -1099,22 +1055,9 @@ FtpCommunicator::createRemoteFolder(const QString &folderName, const QString &cu
 void
 FtpCommunicator::renameRemote(const QString &oldName, const QString &newName, const QString &currentPath)
 {
-  QString oldPath;
-  QString newPath;
-  if (currentPath.endsWith('/'))
-  {
-    oldPath = currentPath + oldName;
-    newPath = currentPath + newName;
-  }
-  else
-  {
-    oldPath = currentPath + "/" + oldName;
-    newPath = currentPath + "/" + newName;
-  }
-
-  m_pendingRenameTo = newPath;
+  m_pendingRenameTo = joinPath(currentPath, newName);
   m_lastCommand = FtpCommand::Rnfr;
-  sendCommand("RNFR " + oldPath);
+  sendCommand("RNFR " + joinPath(currentPath, oldName));
 }
 
 void
@@ -1231,11 +1174,7 @@ FtpCommunicator::processMd5Queue()
 void
 FtpCommunicator::downloadFolder(const QString &remoteFolderName, const QString &localDir)
 {
-  QString remotePath;
-  if (m_currentPath.endsWith('/'))
-    remotePath = m_currentPath + remoteFolderName;
-  else
-    remotePath = m_currentPath + "/" + remoteFolderName;
+  QString remotePath = joinPath(m_currentPath, remoteFolderName);
 
   m_downloadInProgress = true;
   m_downloadQueue.clear();
@@ -1259,9 +1198,7 @@ FtpCommunicator::downloadItems(const QStringList &names, const QString &localDir
 
   for (const QString &name : names)
   {
-    QString remotePath = m_currentPath.endsWith('/')
-        ? m_currentPath + name
-        : m_currentPath + "/" + name;
+    QString remotePath = joinPath(m_currentPath, name);
 
     if (isDirectory(name))
     {

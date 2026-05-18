@@ -59,6 +59,9 @@ public:
   bool isDirectory(const QString &name) const { return m_remoteFiles.contains(name) && m_remoteFiles.value(name).isDir; }
   QHash<QString, RemoteFileInfo> getRemoteFiles() const { return m_remoteFiles; }
 
+  // Join a remote parent path and child name with exactly one '/' between them.
+  static QString joinPath(const QString &parent, const QString &child);
+
 signals:
   // Connection signals
   void connected();

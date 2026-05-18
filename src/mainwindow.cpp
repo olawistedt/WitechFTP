@@ -695,22 +695,18 @@ MainWindow::createUi()
   // Keyboard support for Rename (F2)
   QShortcut *localRenameShortcut = new QShortcut(QKeySequence("F2"), localListWidget);
   connect(localRenameShortcut, &QShortcut::activated, [this]() {
-    QTreeWidgetItem *item = localListWidget->currentItem();
-    if (item) {
-        QString itemPath = item->data(0, Qt::UserRole).toString();
-        if (itemPath != ".." && !itemPath.isEmpty())
-            renameLocalItem(itemPath);
-    }
+    QString p = pathFromItem(localListWidget->currentItem());
+    if (!p.isEmpty())
+      renameLocalItem(p);
   });
 
   QShortcut *remoteRenameShortcut = new QShortcut(QKeySequence("F2"), remoteListWidget);
   connect(remoteRenameShortcut, &QShortcut::activated, [this]() {
-    QTreeWidgetItem *item = remoteListWidget->currentItem();
-    if (item && m_ftpCommunicator->isConnected()) {
-        QString itemName = item->data(0, Qt::UserRole).toString();
-        if (itemName != ".." && !itemName.isEmpty())
-            renameRemoteItem(itemName);
-    }
+    if (!m_ftpCommunicator->isConnected())
+      return;
+    QString n = remoteNameFromItem(remoteListWidget->currentItem());
+    if (!n.isEmpty())
+      renameRemoteItem(n);
   });
 
   // Drag-and-drop transfers between the two trees
@@ -1032,14 +1028,7 @@ MainWindow::onFtpUploadComplete()
 void
 MainWindow::showLocalContextMenu(const QPoint &pos)
 {
-  QTreeWidgetItem *item = localListWidget->itemAt(pos);
-  QString itemPath;
-  if (item)
-  {
-    itemPath = item->data(0, Qt::UserRole).toString();
-    if (itemPath == "..")
-      itemPath.clear();
-  }
+  QString itemPath = pathFromItem(localListWidget->itemAt(pos));
 
   QMenu contextMenu(this);
   QAction *refreshAction = contextMenu.addAction(m_s->menuRefresh);
@@ -1091,40 +1080,14 @@ MainWindow::showLocalContextMenu(const QPoint &pos)
       QMessageBox::warning(this, m_s->dlgNotConnTitle, m_s->dlgNotConnUploadMsg);
       return;
     }
-    QFileInfo info(itemPath);
-    if (info.isDir())
+    if (QFileInfo(itemPath).isDir())
       uploadFolder(itemPath);
     else
       uploadFile(itemPath);
   }
   else if (selectedAction == deleteAction)
   {
-    QFileInfo info(itemPath);
-    QString typeWord    = info.isDir() ? m_s->wordFolder    : m_s->wordFile;
-    QString typeWordDef = info.isDir() ? m_s->wordFolderDef : m_s->wordFileDef;
-    QMessageBox::StandardButton reply =
-        QMessageBox::question(this,
-                              QString(m_s->dlgDeleteTitle).arg(typeWord),
-                              QString(m_s->dlgDeleteMsg).arg(typeWordDef, info.fileName()),
-                              QMessageBox::Yes | QMessageBox::No);
-    if (reply == QMessageBox::Yes)
-    {
-      bool success = false;
-      if (info.isDir())
-      {
-        QDir dir(itemPath);
-        success = dir.removeRecursively();
-      }
-      else
-      {
-        success = QFile::remove(itemPath);
-      }
-
-      if (!success)
-        QMessageBox::critical(this, m_s->dlgErrTitle, QString(m_s->dlgErrDeleteMsg).arg(typeWordDef, info.fileName()));
-      else
-        populateLocalList(m_localCurrentPath);
-    }
+    deleteLocalPaths({ itemPath });
   }
 }
 
@@ -1134,25 +1097,14 @@ MainWindow::createLocalFolder()
   if (m_localCurrentPath.isEmpty())
     return;
 
-  bool ok;
-  QString folderName = QInputDialog::getText(this,
-                                             m_s->dlgCreateFolderTitle,
-                                             m_s->dlgFolderNamePrompt,
-                                             QLineEdit::Normal,
-                                             "",
-                                             &ok);
-  if (!ok || folderName.trimmed().isEmpty())
+  QString folderName = promptForName(m_s->dlgCreateFolderTitle, m_s->dlgFolderNamePrompt);
+  if (folderName.isEmpty())
     return;
 
-  QDir dir(m_localCurrentPath);
-  if (dir.mkdir(folderName.trimmed()))
-  {
+  if (QDir(m_localCurrentPath).mkdir(folderName))
     populateLocalList(m_localCurrentPath);
-  }
   else
-  {
     QMessageBox::critical(this, m_s->dlgErrTitle, m_s->dlgErrCreateFolderMsg);
-  }
 }
 
 void
@@ -1161,18 +1113,11 @@ MainWindow::renameLocalItem(const QString &oldPath)
   QFileInfo fileInfo(oldPath);
   QString oldName = fileInfo.fileName();
 
-  bool ok;
-  QString newName = QInputDialog::getText(this,
-                                          m_s->dlgRenameTitle,
-                                          m_s->dlgNewNamePrompt,
-                                          QLineEdit::Normal,
-                                          oldName,
-                                          &ok);
-  if (!ok || newName.trimmed().isEmpty() || newName == oldName)
+  QString newName = promptForName(m_s->dlgRenameTitle, m_s->dlgNewNamePrompt, oldName);
+  if (newName.isEmpty() || newName == oldName)
     return;
 
-  QString newPath = fileInfo.dir().filePath(newName.trimmed());
-
+  QString newPath = fileInfo.dir().filePath(newName);
   if (QFile::exists(newPath))
   {
     QMessageBox::warning(this, m_s->dlgFileExistsTitle, m_s->dlgFileExistsMsg);
@@ -1180,13 +1125,9 @@ MainWindow::renameLocalItem(const QString &oldPath)
   }
 
   if (QFile::rename(oldPath, newPath))
-  {
     populateLocalList(m_localCurrentPath);
-  }
   else
-  {
     QMessageBox::critical(this, m_s->dlgErrTitle, m_s->dlgErrRenameMsg);
-  }
 }
 
 void
@@ -1195,17 +1136,7 @@ MainWindow::showRemoteContextMenu(const QPoint &pos)
   if (!m_ftpCommunicator->isConnected())
     return;
 
-  QTreeWidgetItem *item = remoteListWidget->itemAt(pos);
-
-  QString itemName;
-  if (item)
-  {
-    itemName = item->data(0, Qt::UserRole).toString();
-    if (itemName.isEmpty())
-      itemName = item->text(0);
-    if (itemName == "..")
-      itemName.clear();
-  }
+  QString itemName = remoteNameFromItem(remoteListWidget->itemAt(pos));
 
   QMenu contextMenu(this);
   QAction *refreshAction = contextMenu.addAction(m_s->menuRefresh);
@@ -1214,21 +1145,21 @@ MainWindow::showRemoteContextMenu(const QPoint &pos)
   QAction *downloadFolderAction = nullptr;
   QAction *renameAction = nullptr;
   QAction *deleteAction = nullptr;
-  QAction *deleteFolderAction = nullptr;
 
   if (!itemName.isEmpty())
   {
     contextMenu.addSeparator();
     renameAction = contextMenu.addAction(m_s->menuRename);
-    if (!m_ftpCommunicator->isDirectory(itemName))
+    bool isDir = m_ftpCommunicator->isDirectory(itemName);
+    if (isDir)
     {
-      downloadFileAction = contextMenu.addAction(m_s->menuDownloadFile);
-      deleteAction = contextMenu.addAction(m_s->menuDeleteFile);
+      downloadFolderAction = contextMenu.addAction(m_s->menuDownloadFolder);
+      deleteAction = contextMenu.addAction(m_s->menuDeleteFolder);
     }
     else
     {
-      downloadFolderAction = contextMenu.addAction(m_s->menuDownloadFolder);
-      deleteFolderAction = contextMenu.addAction(m_s->menuDeleteFolder);
+      downloadFileAction = contextMenu.addAction(m_s->menuDownloadFile);
+      deleteAction = contextMenu.addAction(m_s->menuDeleteFile);
     }
   }
 
@@ -1237,51 +1168,17 @@ MainWindow::showRemoteContextMenu(const QPoint &pos)
     return;
 
   if (selectedAction == refreshAction)
-  {
     m_ftpCommunicator->listRemoteDirectory(m_ftpCommunicator->getCurrentPath());
-  }
   else if (selectedAction == createFolderAction)
-  {
     createRemoteFolder();
-  }
   else if (selectedAction == renameAction)
-  {
     renameRemoteItem(itemName);
-  }
   else if (selectedAction == downloadFileAction)
-  {
     downloadFile(itemName);
-  }
   else if (selectedAction == downloadFolderAction)
-  {
     downloadFolder(itemName);
-  }
   else if (selectedAction == deleteAction)
-  {
-    QMessageBox::StandardButton reply =
-        QMessageBox::question(this,
-                              m_s->dlgDeleteFileTitle,
-                              QString(m_s->dlgDeleteFileMsg).arg(itemName),
-                              QMessageBox::Yes | QMessageBox::No);
-    if (reply == QMessageBox::Yes)
-      deleteRemoteFileConfirmed(itemName);
-  }
-  else if (selectedAction == deleteFolderAction)
-  {
-    QMessageBox::StandardButton reply =
-        QMessageBox::question(this,
-                              m_s->dlgDeleteFolderTitle,
-                              QString(m_s->dlgDeleteFolderMsg).arg(itemName),
-                              QMessageBox::Yes | QMessageBox::No);
-    if (reply == QMessageBox::Yes)
-      deleteRemoteDirectoryConfirmed(itemName);
-  }
-}
-
-void
-MainWindow::deleteRemoteFileConfirmed(const QString &fileName)
-{
-  m_ftpCommunicator->deleteRemoteFile(fileName, m_ftpCommunicator->getCurrentPath());
+    deleteRemoteNames({ itemName });
 }
 
 void
@@ -1290,17 +1187,11 @@ MainWindow::createRemoteFolder()
   if (!m_ftpCommunicator->isConnected())
     return;
 
-  bool ok;
-  QString folderName = QInputDialog::getText(this,
-                                             m_s->dlgCreateFolderTitle,
-                                             m_s->dlgFolderNamePrompt,
-                                             QLineEdit::Normal,
-                                             "",
-                                             &ok);
-  if (!ok || folderName.trimmed().isEmpty())
+  QString folderName = promptForName(m_s->dlgCreateFolderTitle, m_s->dlgFolderNamePrompt);
+  if (folderName.isEmpty())
     return;
 
-  m_ftpCommunicator->createRemoteFolder(folderName.trimmed(), m_ftpCommunicator->getCurrentPath());
+  m_ftpCommunicator->createRemoteFolder(folderName, m_ftpCommunicator->getCurrentPath());
 }
 
 void
@@ -1309,26 +1200,11 @@ MainWindow::renameRemoteItem(const QString &oldName)
   if (!m_ftpCommunicator->isConnected())
     return;
 
-  bool ok;
-  QString newName = QInputDialog::getText(this,
-                                          m_s->dlgRenameTitle,
-                                          m_s->dlgNewNamePrompt,
-                                          QLineEdit::Normal,
-                                          oldName,
-                                          &ok);
-  if (!ok || newName.trimmed().isEmpty() || newName == oldName)
+  QString newName = promptForName(m_s->dlgRenameTitle, m_s->dlgNewNamePrompt, oldName);
+  if (newName.isEmpty() || newName == oldName)
     return;
 
-  m_ftpCommunicator->renameRemote(oldName, newName.trimmed(), m_ftpCommunicator->getCurrentPath());
-}
-
-void
-MainWindow::deleteRemoteDirectoryConfirmed(const QString &dirName)
-{
-  if (!m_ftpCommunicator->isConnected())
-    return;
-
-  m_ftpCommunicator->deleteRemoteDirectory(dirName, m_ftpCommunicator->getCurrentPath());
+  m_ftpCommunicator->renameRemote(oldName, newName, m_ftpCommunicator->getCurrentPath());
 }
 
 void
@@ -1373,37 +1249,18 @@ MainWindow::onRemoteItemClicked(QTreeWidgetItem *item)
   if (!m_ftpCommunicator->isConnected())
     return;
 
-  QString name = item->data(0, Qt::UserRole).toString();
-  if (name.isEmpty())
-    name = item->text(0);
+  QString rawName = item->data(0, Qt::UserRole).toString();
+  if (rawName.isEmpty())
+    rawName = item->text(0);
 
-  if (name == "..") {
-      // Navigate up
-      QUrl url;
-      QString currentPath = m_ftpCommunicator->getCurrentPath();
-      if (currentPath.endsWith('/') || currentPath.isEmpty())
-          url.setPath(currentPath);
-      else
-          url.setPath(currentPath + '/');
+  QString currentPath = m_ftpCommunicator->getCurrentPath();
+  bool isUp = (rawName == "..");
+  if (!isUp && !m_ftpCommunicator->isDirectory(rawName))
+    return;
 
-      QUrl newUrl = url.resolved(QUrl(name));
-      m_ftpCommunicator->changeDirectory(newUrl.path());
-      return;
-  }
-
-  if (m_ftpCommunicator->isDirectory(name))
-  {
-      // Navigate into directory
-      QUrl url;
-      QString currentPath = m_ftpCommunicator->getCurrentPath();
-      if (currentPath.endsWith('/') || currentPath.isEmpty())
-          url.setPath(currentPath);
-      else
-          url.setPath(currentPath + '/');
-
-      QUrl newUrl = url.resolved(QUrl(name));
-      m_ftpCommunicator->changeDirectory(newUrl.path());
-  }
+  QUrl base;
+  base.setPath(currentPath.isEmpty() || currentPath.endsWith('/') ? currentPath : currentPath + '/');
+  m_ftpCommunicator->changeDirectory(base.resolved(QUrl(rawName)).path());
 }
 
 void
@@ -1419,11 +1276,7 @@ MainWindow::uploadFile(const QString &filePath)
     return;
   }
 
-  // Add to upload queue for the current remote directory
-  QString currentPath = m_ftpCommunicator->getCurrentPath();
-  QString remotePath = currentPath.endsWith('/') ? currentPath : currentPath + "/";
-  remotePath += fileInfo.fileName();
-  
+  QString remotePath = FtpCommunicator::joinPath(m_ftpCommunicator->getCurrentPath(), fileInfo.fileName());
   m_ftpCommunicator->uploadFile(filePath, remotePath);
 }
 
@@ -1433,12 +1286,9 @@ MainWindow::downloadFile(const QString &fileName)
   if (!m_ftpCommunicator->isConnected())
     return;
 
-  // Get the local directory where we'll save the file
   QString localDir = m_localCurrentPath.isEmpty() ? QDir::currentPath() : m_localCurrentPath;
+  QString localFilePath = QDir(localDir).filePath(fileName);
 
-  QString localFilePath = localDir + "/" + fileName;
-
-  // Check if file already exists
   if (QFile::exists(localFilePath))
   {
     QMessageBox::StandardButton reply =
@@ -1606,24 +1456,42 @@ MainWindow::eventFilter(QObject *obj, QEvent *event)
   return QMainWindow::eventFilter(obj, event);
 }
 
-void
-MainWindow::deleteLocalItemDirectly()
+QString
+MainWindow::pathFromItem(QTreeWidgetItem *item)
 {
-  QList<QTreeWidgetItem *> selected = localListWidget->selectedItems();
+  if (!item)
+    return QString();
+  QString p = item->data(0, Qt::UserRole).toString();
+  return (p == "..") ? QString() : p;
+}
 
-  // Collect valid paths, skipping ".." navigation items
-  QStringList paths;
-  for (QTreeWidgetItem *item : selected)
-  {
-    QString itemPath = item->data(0, Qt::UserRole).toString();
-    if (!itemPath.isEmpty() && itemPath != "..")
-      paths.append(itemPath);
-  }
+QString
+MainWindow::remoteNameFromItem(QTreeWidgetItem *item)
+{
+  if (!item)
+    return QString();
+  QString name = item->data(0, Qt::UserRole).toString();
+  if (name.isEmpty())
+    name = item->text(0);
+  return (name == "..") ? QString() : name;
+}
 
+QString
+MainWindow::promptForName(const QString &title, const QString &prompt, const QString &initial)
+{
+  bool ok = false;
+  QString name = QInputDialog::getText(this, title, prompt, QLineEdit::Normal, initial, &ok);
+  if (!ok)
+    return QString();
+  return name.trimmed();
+}
+
+void
+MainWindow::deleteLocalPaths(const QStringList &paths)
+{
   if (paths.isEmpty())
     return;
 
-  // Build confirmation dialog
   QString title;
   QString msg;
   if (paths.size() == 1)
@@ -1640,10 +1508,7 @@ MainWindow::deleteLocalItemDirectly()
     msg   = QString(m_s->dlgDeleteMultiMsg).arg(paths.size());
   }
 
-  QMessageBox::StandardButton reply =
-      QMessageBox::question(this, title, msg, QMessageBox::Yes | QMessageBox::No);
-
-  if (reply != QMessageBox::Yes)
+  if (QMessageBox::question(this, title, msg, QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
     return;
 
   QStringList failures;
@@ -1651,17 +1516,7 @@ MainWindow::deleteLocalItemDirectly()
   {
     QFileInfo info(path);
     QString typeWordDef = info.isDir() ? m_s->wordFolderDef : m_s->wordFileDef;
-
-    bool success = false;
-    if (info.isDir())
-    {
-      QDir dir(path);
-      success = dir.removeRecursively();
-    }
-    else
-    {
-      success = QFile::remove(path);
-    }
+    bool success = info.isDir() ? QDir(path).removeRecursively() : QFile::remove(path);
 
     if (success)
       logStatus(QString(m_s->logDeleted).arg(typeWordDef, info.fileName()));
@@ -1680,28 +1535,11 @@ MainWindow::deleteLocalItemDirectly()
 }
 
 void
-MainWindow::deleteRemoteItemDirectly()
+MainWindow::deleteRemoteNames(const QStringList &names)
 {
-  if (!m_ftpCommunicator->isConnected())
+  if (names.isEmpty() || !m_ftpCommunicator->isConnected())
     return;
 
-  QList<QTreeWidgetItem *> selected = remoteListWidget->selectedItems();
-
-  // Collect valid names, skipping ".." navigation items
-  QStringList names;
-  for (QTreeWidgetItem *item : selected)
-  {
-    QString itemName = item->data(0, Qt::UserRole).toString();
-    if (itemName.isEmpty())
-      itemName = item->text(0);
-    if (!itemName.isEmpty() && itemName != "..")
-      names.append(itemName);
-  }
-
-  if (names.isEmpty())
-    return;
-
-  // Build confirmation dialog
   QString title;
   QString msg;
   if (names.size() == 1)
@@ -1718,10 +1556,7 @@ MainWindow::deleteRemoteItemDirectly()
     msg   = QString(m_s->dlgDeleteMultiMsg).arg(names.size());
   }
 
-  QMessageBox::StandardButton reply =
-      QMessageBox::question(this, title, msg, QMessageBox::Yes | QMessageBox::No);
-
-  if (reply != QMessageBox::Yes)
+  if (QMessageBox::question(this, title, msg, QMessageBox::Yes | QMessageBox::No) != QMessageBox::Yes)
     return;
 
   QStringList files, dirs;
@@ -1733,4 +1568,30 @@ MainWindow::deleteRemoteItemDirectly()
       files.append(name);
   }
   m_ftpCommunicator->deleteRemoteItems(files, dirs, m_ftpCommunicator->getCurrentPath());
+}
+
+void
+MainWindow::deleteLocalItemDirectly()
+{
+  QStringList paths;
+  for (QTreeWidgetItem *item : localListWidget->selectedItems())
+  {
+    QString p = pathFromItem(item);
+    if (!p.isEmpty())
+      paths.append(p);
+  }
+  deleteLocalPaths(paths);
+}
+
+void
+MainWindow::deleteRemoteItemDirectly()
+{
+  QStringList names;
+  for (QTreeWidgetItem *item : remoteListWidget->selectedItems())
+  {
+    QString n = remoteNameFromItem(item);
+    if (!n.isEmpty())
+      names.append(n);
+  }
+  deleteRemoteNames(names);
 }

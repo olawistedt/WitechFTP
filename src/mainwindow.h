@@ -54,8 +54,6 @@ private slots:
   void showRemoteContextMenu(const QPoint &pos);
   void uploadFolder(const QString &localPath);
   void onLocalItemClicked(QTreeWidgetItem *item);
-  void deleteRemoteFileConfirmed(const QString &fileName);
-  void deleteRemoteDirectoryConfirmed(const QString &dirName);
   void renameRemoteItem(const QString &oldName);
   void renameLocalItem(const QString &oldPath);
   void createRemoteFolder();
@@ -77,6 +75,13 @@ private:
   void populateLocalList(const QString &path);
   void loadSavedSites();
   void saveCurrentSite();
+
+  // Helpers
+  static QString pathFromItem(QTreeWidgetItem *item);
+  static QString remoteNameFromItem(QTreeWidgetItem *item);
+  QString promptForName(const QString &title, const QString &prompt, const QString &initial = QString());
+  void deleteLocalPaths(const QStringList &paths);
+  void deleteRemoteNames(const QStringList &names);
 
   // Language
   int m_language; // 0 = Swedish, 1 = English
