@@ -119,6 +119,12 @@ private:
   // UI state
   QString m_currentRemotePath;
   QHash<QString, FtpCommunicator::RemoteFileInfo> m_remoteFiles;
+
+  // Inline rename state
+  QMetaObject::Connection m_renameConnection {};
+  QTreeWidgetItem *m_renamingItem = nullptr;
+  QString m_renamingOldText;
+  QString m_renamingOldPath;
 };
 
 #endif  // MAINWINDOW_H

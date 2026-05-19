@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "filetreewidget.h"
 
+#include <QAbstractItemDelegate>
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -219,24 +220,66 @@ MainWindow::createLocalFolder()
 void
 MainWindow::renameLocalItem(const QString &oldPath)
 {
-  QFileInfo fileInfo(oldPath);
-  QString oldName = fileInfo.fileName();
-
-  QString newName = promptForName(m_s->dlgRenameTitle, m_s->dlgNewNamePrompt, oldName);
-  if (newName.isEmpty() || newName == oldName)
-    return;
-
-  QString newPath = fileInfo.dir().filePath(newName);
-  if (QFile::exists(newPath))
+  QTreeWidgetItem *item = nullptr;
+  for (int i = 0; i < localListWidget->topLevelItemCount(); ++i)
   {
-    QMessageBox::warning(this, m_s->dlgFileExistsTitle, m_s->dlgFileExistsMsg);
-    return;
+    QTreeWidgetItem *c = localListWidget->topLevelItem(i);
+    if (c->data(0, Qt::UserRole).toString() == oldPath)
+    {
+      item = c;
+      break;
+    }
   }
+  if (!item)
+    return;
 
-  if (QFile::rename(oldPath, newPath))
-    populateLocalList(m_localCurrentPath);
-  else
-    QMessageBox::critical(this, m_s->dlgErrTitle, m_s->dlgErrRenameMsg);
+  m_renamingItem  = item;
+  m_renamingOldText = item->text(0);
+  m_renamingOldPath = oldPath;
+
+  if (m_renameConnection)
+    disconnect(m_renameConnection);
+
+  m_renameConnection = connect(
+    localListWidget->itemDelegate(), &QAbstractItemDelegate::closeEditor,
+    this, [this](QWidget *, QAbstractItemDelegate::EndEditHint) {
+      disconnect(m_renameConnection);
+      QTreeWidgetItem *item = m_renamingItem;
+      m_renamingItem = nullptr;
+      if (!item)
+        return;
+
+      item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+
+      QString newName = item->text(0).trimmed();
+      if (newName.isEmpty() || newName == m_renamingOldText)
+      {
+        item->setText(0, m_renamingOldText);
+        return;
+      }
+
+      QFileInfo fileInfo(m_renamingOldPath);
+      QString newPath = fileInfo.dir().filePath(newName);
+
+      if (QFile::exists(newPath))
+      {
+        item->setText(0, m_renamingOldText);
+        QMessageBox::warning(this, m_s->dlgFileExistsTitle, m_s->dlgFileExistsMsg);
+        return;
+      }
+
+      if (!QFile::rename(m_renamingOldPath, newPath))
+      {
+        item->setText(0, m_renamingOldText);
+        QMessageBox::critical(this, m_s->dlgErrTitle, m_s->dlgErrRenameMsg);
+        return;
+      }
+
+      item->setData(0, Qt::UserRole, newPath);
+    });
+
+  item->setFlags(item->flags() | Qt::ItemIsEditable);
+  localListWidget->editItem(item, 0);
 }
 
 void

@@ -2,6 +2,7 @@
 #include "filetreewidget.h"
 #include "ftpcommunicator.h"
 
+#include <QAbstractItemDelegate>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
@@ -163,11 +164,50 @@ MainWindow::renameRemoteItem(const QString &oldName)
   if (!m_ftpCommunicator->isConnected())
     return;
 
-  QString newName = promptForName(m_s->dlgRenameTitle, m_s->dlgNewNamePrompt, oldName);
-  if (newName.isEmpty() || newName == oldName)
+  QTreeWidgetItem *item = nullptr;
+  for (int i = 0; i < remoteListWidget->topLevelItemCount(); ++i)
+  {
+    QTreeWidgetItem *c = remoteListWidget->topLevelItem(i);
+    if (c->data(0, Qt::UserRole).toString() == oldName)
+    {
+      item = c;
+      break;
+    }
+  }
+  if (!item)
     return;
 
-  m_ftpCommunicator->renameRemote(oldName, newName, m_ftpCommunicator->getCurrentPath());
+  m_renamingItem    = item;
+  m_renamingOldText = oldName;
+  m_renamingOldPath = oldName;
+
+  if (m_renameConnection)
+    disconnect(m_renameConnection);
+
+  m_renameConnection = connect(
+    remoteListWidget->itemDelegate(), &QAbstractItemDelegate::closeEditor,
+    this, [this](QWidget *, QAbstractItemDelegate::EndEditHint) {
+      disconnect(m_renameConnection);
+      QTreeWidgetItem *item = m_renamingItem;
+      m_renamingItem = nullptr;
+      if (!item)
+        return;
+
+      item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+
+      QString newName = item->text(0).trimmed();
+      if (newName.isEmpty() || newName == m_renamingOldText)
+      {
+        item->setText(0, m_renamingOldText);
+        return;
+      }
+
+      item->setData(0, Qt::UserRole, newName);
+      m_ftpCommunicator->renameRemote(m_renamingOldPath, newName, m_ftpCommunicator->getCurrentPath());
+    });
+
+  item->setFlags(item->flags() | Qt::ItemIsEditable);
+  remoteListWidget->editItem(item, 0);
 }
 
 void
