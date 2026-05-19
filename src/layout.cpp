@@ -235,11 +235,13 @@ MainWindow::createUi()
 
   // Keyboard support for Refresh (F5)
   QShortcut *localRefreshShortcut = new QShortcut(QKeySequence("F5"), localListWidget);
+  localRefreshShortcut->setContext(Qt::WidgetWithChildrenShortcut);
   connect(localRefreshShortcut, &QShortcut::activated, [this]() {
     populateLocalList(m_localCurrentPath);
   });
 
   QShortcut *remoteRefreshShortcut = new QShortcut(QKeySequence("F5"), remoteListWidget);
+  remoteRefreshShortcut->setContext(Qt::WidgetWithChildrenShortcut);
   connect(remoteRefreshShortcut, &QShortcut::activated, [this]() {
     if (m_ftpCommunicator->isConnected())
         m_ftpCommunicator->listRemoteDirectory(m_ftpCommunicator->getCurrentPath());
@@ -247,15 +249,21 @@ MainWindow::createUi()
 
   // Keyboard support for Rename (F2)
   QShortcut *localRenameShortcut = new QShortcut(QKeySequence("F2"), localListWidget);
+  localRenameShortcut->setContext(Qt::WidgetWithChildrenShortcut);
   connect(localRenameShortcut, &QShortcut::activated, [this]() {
+    if (localListWidget->selectedItems().size() != 1)
+      return;
     QString p = pathFromItem(localListWidget->currentItem());
     if (!p.isEmpty())
       renameLocalItem(p);
   });
 
   QShortcut *remoteRenameShortcut = new QShortcut(QKeySequence("F2"), remoteListWidget);
+  remoteRenameShortcut->setContext(Qt::WidgetWithChildrenShortcut);
   connect(remoteRenameShortcut, &QShortcut::activated, [this]() {
     if (!m_ftpCommunicator->isConnected())
+      return;
+    if (remoteListWidget->selectedItems().size() != 1)
       return;
     QString n = remoteNameFromItem(remoteListWidget->currentItem());
     if (!n.isEmpty())
