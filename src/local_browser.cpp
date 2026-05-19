@@ -8,7 +8,6 @@
 #include <QFileInfo>
 #include <QFileSystemWatcher>
 #include <QHeaderView>
-#include <QInputDialog>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>

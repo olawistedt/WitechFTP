@@ -61,9 +61,6 @@ struct LangStrings {
   // Dialogs – create folder
   const char *dlgCreateFolderTitle;
   const char *dlgFolderNamePrompt;
-  // Dialogs – rename
-  const char *dlgRenameTitle;
-  const char *dlgNewNamePrompt;
   // Dialogs – file already exists (local rename)
   const char *dlgFileExistsTitle;
   const char *dlgFileExistsMsg;
