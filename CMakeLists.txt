@@ -22,6 +22,13 @@ add_executable(WitechFTP WIN32 MACOSX_BUNDLE
     src/main.cpp
     src/mainwindow.cpp
     src/mainwindow.h
+    src/layout.cpp
+    src/local_browser.cpp
+    src/remote_browser.cpp
+    src/transfers.cpp
+    src/saved_sites.cpp
+    src/langstrings.cpp
+    src/langstrings.h
     src/ftpcommunicator.cpp
     src/ftpcommunicator.h
     src/filetreewidget.cpp

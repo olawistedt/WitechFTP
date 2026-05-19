@@ -6,6 +6,7 @@
 #include <QString>
 
 #include "ftpcommunicator.h"
+#include "langstrings.h"
 
 #include <QFileSystemWatcher>
 
@@ -19,8 +20,6 @@ class QTreeWidgetItem;
 class QTextEdit;
 class QLabel;
 QT_END_NAMESPACE
-
-struct LangStrings;
 
 class MainWindow : public QMainWindow
 {
@@ -77,6 +76,7 @@ private:
   void saveCurrentSite();
 
   // Helpers
+  static QString formatSize(qint64 bytes);
   static QString pathFromItem(QTreeWidgetItem *item);
   static QString remoteNameFromItem(QTreeWidgetItem *item);
   QString promptForName(const QString &title, const QString &prompt, const QString &initial = QString());
