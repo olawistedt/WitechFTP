@@ -196,7 +196,8 @@ private:
   bool m_downloadInProgress;
 
   // Transfer counters
-  int m_filesToTransfer = 0;
+  int m_filesToTransfer = 0;    // accumulates as files are discovered
+  int m_expectedTransferCount = 0;  // snapshot taken when pre-count message is shown
   int m_filesTransferred = 0;
   bool m_downloadCountEmitted = false;
   bool m_control226Received;

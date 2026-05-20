@@ -802,7 +802,11 @@ FtpCommunicator::abortTransfer()
   m_remoteDirsToList.clear();
   m_remoteDirsToDelete.clear();
   m_remoteDirsToExploreForDownload.clear();
-  
+  m_filesToTransfer = 0;
+  m_expectedTransferCount = 0;
+  m_filesTransferred = 0;
+  m_downloadCountEmitted = false;
+
   m_lastCommand = FtpCommand::None;
   emit statusUpdated("Överföringar avbrutna.");
   
@@ -886,6 +890,7 @@ FtpCommunicator::uploadFile(const QString &localPath, const QString &remotePath)
   m_uploadQueue.enqueue({ FtpUploadCommand::UploadFile, localPath, remotePath });
   m_filesToTransfer = 1;
   m_filesTransferred = 0;
+  m_expectedTransferCount = m_filesToTransfer;
   emit statusUpdated("Antal filer att ladda upp: 1");
   processUploadQueue();
 }
@@ -926,6 +931,7 @@ FtpCommunicator::uploadFolder(const QString &localPath, const QString &remotePat
   m_filesToTransfer = static_cast<int>(std::count_if(m_uploadQueue.cbegin(), m_uploadQueue.cend(),
       [](const FtpUploadCommand &c){ return c.type == FtpUploadCommand::UploadFile; }));
   m_filesTransferred = 0;
+  m_expectedTransferCount = m_filesToTransfer;
   emit statusUpdated(QString("Antal filer att ladda upp: %1").arg(m_filesToTransfer));
   processUploadQueue();
 }
@@ -968,6 +974,7 @@ FtpCommunicator::uploadItems(const QStringList &localPaths, const QString &remot
   m_filesToTransfer = static_cast<int>(std::count_if(m_uploadQueue.cbegin(), m_uploadQueue.cend(),
       [](const FtpUploadCommand &c){ return c.type == FtpUploadCommand::UploadFile; }));
   m_filesTransferred = 0;
+  m_expectedTransferCount = m_filesToTransfer;
   emit statusUpdated(QString("Antal filer att ladda upp: %1").arg(m_filesToTransfer));
   processUploadQueue();
 }
@@ -978,6 +985,7 @@ FtpCommunicator::downloadFile(const QString &fileName, const QString &localDir)
   m_filesToTransfer = 1;
   m_filesTransferred = 0;
   m_downloadCountEmitted = true;
+  m_expectedTransferCount = m_filesToTransfer;
   emit statusUpdated("Antal filer att ladda ner: 1");
   QString localFilePath = QDir(localDir).filePath(fileName);
   emit statusUpdated(QString("Laddar ner: %1 → %2").arg(fileName, localFilePath));
@@ -1041,16 +1049,16 @@ FtpCommunicator::renameRemote(const QString &oldName, const QString &newName, co
 void
 FtpCommunicator::emitCompletionStatus(const QString &verb)
 {
-  if (m_filesTransferred != m_filesToTransfer)
+  if (m_filesTransferred != m_expectedTransferCount)
   {
     emit statusUpdated(QString("FEL: %1 av %2 filer %3.")
-                           .arg(m_filesTransferred).arg(m_filesToTransfer).arg(verb));
+                           .arg(m_filesTransferred).arg(m_expectedTransferCount).arg(verb));
     emit transferCountMismatch();
   }
   else
   {
     emit statusUpdated(QString("Klart: %1 av %2 filer %3.")
-                           .arg(m_filesTransferred).arg(m_filesToTransfer).arg(verb));
+                           .arg(m_filesTransferred).arg(m_expectedTransferCount).arg(verb));
   }
 }
 
@@ -1216,6 +1224,7 @@ FtpCommunicator::downloadItems(const QStringList &names, const QString &localDir
   if (m_remoteDirsToExploreForDownload.isEmpty())
   {
     m_downloadCountEmitted = true;
+    m_expectedTransferCount = m_filesToTransfer;
     emit statusUpdated(QString("Antal filer att ladda ner: %1").arg(m_filesToTransfer));
   }
 
@@ -1241,6 +1250,7 @@ FtpCommunicator::processDownloadQueue()
   if (!m_downloadCountEmitted)
   {
     m_downloadCountEmitted = true;
+    m_expectedTransferCount = m_filesToTransfer;
     emit statusUpdated(QString("Antal filer att ladda ner: %1").arg(m_filesToTransfer));
   }
 
