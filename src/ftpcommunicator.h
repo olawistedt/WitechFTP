@@ -76,6 +76,7 @@ signals:
   void uploadComplete();
   void downloadComplete();
   void deletionComplete();
+  void transferCountMismatch();
   void md5Received(const QString &fileName, const QString &md5);
 
 private slots:
@@ -157,6 +158,7 @@ private:
   void handlePasvResponse(const QString &response);
   void processUploadQueue();
   void processDownloadQueue();
+  void emitCompletionStatus(const QString &verb);
   void processRemoteDeleteQueue();
   void finalizeDownload();
 
@@ -192,6 +194,11 @@ private:
   QString m_localBaseDirForDownload;
   QString m_baseRemotePathForDownload;
   bool m_downloadInProgress;
+
+  // Transfer counters
+  int m_filesToTransfer = 0;
+  int m_filesTransferred = 0;
+  bool m_downloadCountEmitted = false;
   bool m_control226Received;
   bool m_dataDisconnected;
 

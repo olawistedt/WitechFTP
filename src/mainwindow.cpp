@@ -46,6 +46,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
   connect(m_ftpCommunicator, &FtpCommunicator::md5Received, this, &MainWindow::onFtpMd5Received);
   connect(m_ftpCommunicator, &FtpCommunicator::downloadComplete, this, &MainWindow::onFtpDownloadComplete);
   connect(m_ftpCommunicator, &FtpCommunicator::uploadComplete, this, &MainWindow::onFtpUploadComplete);
+  connect(m_ftpCommunicator, &FtpCommunicator::transferCountMismatch, this, &MainWindow::onFtpTransferCountMismatch);
 
   // Connect local watcher
   connect(m_localWatcher, &QFileSystemWatcher::directoryChanged, this, &MainWindow::onLocalDirectoryChanged);

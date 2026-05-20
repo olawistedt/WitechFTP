@@ -12,6 +12,7 @@
 #include <QTextStream>
 #include <QTimer>
 #include <QTimeZone>
+#include <algorithm>
 #include <functional>
 
 QString
@@ -237,7 +238,10 @@ FtpCommunicator::onControlReadyRead()
       if (m_downloadInProgress)
         processDownloadQueue();
       else
+      {
+        emitCompletionStatus("nedladdades");
         emit downloadComplete();
+      }
     }
     else if (responseCode >= 400 && m_lastCommand == FtpCommand::Stor)
     {
@@ -256,7 +260,10 @@ FtpCommunicator::onControlReadyRead()
         processUploadQueue();
       }
       else
+      {
+        emitCompletionStatus("uppladdades");
         emit uploadComplete();
+      }
     }
     else if (responseCode == 257 && m_lastCommand == FtpCommand::Mkd)
     {  // MKD success (from upload queue)
@@ -450,6 +457,7 @@ FtpCommunicator::onControlReadyRead()
                                .arg(m_localFileSizeForVerify)
                                .arg(remoteSize));
       }
+      m_filesTransferred++;
       m_uploadQueue.dequeue();
       m_pendingRemotePathForUpload.clear();
       m_localFileSizeForVerify = 0;
@@ -458,6 +466,7 @@ FtpCommunicator::onControlReadyRead()
         processUploadQueue();
       else
       {
+        emitCompletionStatus("uppladdades");
         emit uploadComplete();
         m_lastCommand = FtpCommand::List;
         sendCommand("PASV");
@@ -466,6 +475,7 @@ FtpCommunicator::onControlReadyRead()
     else if (responseCode == 550 && m_lastCommand == FtpCommand::Size)
     {  // SIZE not supported or file not found on server
       emit statusUpdated(QString("VARNING: Kunde inte verifiera %1 – SIZE-kommando stödjs ej av servern").arg(m_pendingRemotePathForUpload));
+      m_filesTransferred++;
       m_uploadQueue.dequeue();
       m_pendingRemotePathForUpload.clear();
       m_localFileSizeForVerify = 0;
@@ -474,6 +484,7 @@ FtpCommunicator::onControlReadyRead()
         processUploadQueue();
       else
       {
+        emitCompletionStatus("uppladdades");
         emit uploadComplete();
         m_lastCommand = FtpCommand::List;
         sendCommand("PASV");
@@ -710,6 +721,7 @@ FtpCommunicator::onDataDisconnected()
       else
       {
         m_downloadQueue.enqueue({ FtpDownloadCommand::DownloadFile, remoteFullPath, localFullPath });
+        m_filesToTransfer++;
       }
     }
 
@@ -743,6 +755,7 @@ FtpCommunicator::finalizeDownload()
   m_pendingFileNameForDownload.clear();
   m_control226Received = false;
   m_dataDisconnected = false;
+  m_filesTransferred++;
 
   if (m_downloadInProgress)
   {
@@ -750,6 +763,7 @@ FtpCommunicator::finalizeDownload()
   }
   else
   {
+    emitCompletionStatus("nedladdades");
     emit downloadComplete();
     m_lastCommand = FtpCommand::List;
     sendCommand("PASV");
@@ -870,6 +884,9 @@ FtpCommunicator::uploadFile(const QString &localPath, const QString &remotePath)
 {
   m_uploadQueue.clear();
   m_uploadQueue.enqueue({ FtpUploadCommand::UploadFile, localPath, remotePath });
+  m_filesToTransfer = 1;
+  m_filesTransferred = 0;
+  emit statusUpdated("Antal filer att ladda upp: 1");
   processUploadQueue();
 }
 
@@ -906,6 +923,10 @@ FtpCommunicator::uploadFolder(const QString &localPath, const QString &remotePat
   };
 
   populateQueue(localPath, remoteFolderPath);
+  m_filesToTransfer = static_cast<int>(std::count_if(m_uploadQueue.cbegin(), m_uploadQueue.cend(),
+      [](const FtpUploadCommand &c){ return c.type == FtpUploadCommand::UploadFile; }));
+  m_filesTransferred = 0;
+  emit statusUpdated(QString("Antal filer att ladda upp: %1").arg(m_filesToTransfer));
   processUploadQueue();
 }
 
@@ -944,12 +965,20 @@ FtpCommunicator::uploadItems(const QStringList &localPaths, const QString &remot
       m_uploadQueue.enqueue({ FtpUploadCommand::UploadFile, localPath, fullRemotePath });
   }
 
+  m_filesToTransfer = static_cast<int>(std::count_if(m_uploadQueue.cbegin(), m_uploadQueue.cend(),
+      [](const FtpUploadCommand &c){ return c.type == FtpUploadCommand::UploadFile; }));
+  m_filesTransferred = 0;
+  emit statusUpdated(QString("Antal filer att ladda upp: %1").arg(m_filesToTransfer));
   processUploadQueue();
 }
 
 void
 FtpCommunicator::downloadFile(const QString &fileName, const QString &localDir)
 {
+  m_filesToTransfer = 1;
+  m_filesTransferred = 0;
+  m_downloadCountEmitted = true;
+  emit statusUpdated("Antal filer att ladda ner: 1");
   QString localFilePath = QDir(localDir).filePath(fileName);
   emit statusUpdated(QString("Laddar ner: %1 → %2").arg(fileName, localFilePath));
 
@@ -1010,11 +1039,28 @@ FtpCommunicator::renameRemote(const QString &oldName, const QString &newName, co
 }
 
 void
+FtpCommunicator::emitCompletionStatus(const QString &verb)
+{
+  if (m_filesTransferred != m_filesToTransfer)
+  {
+    emit statusUpdated(QString("FEL: %1 av %2 filer %3.")
+                           .arg(m_filesTransferred).arg(m_filesToTransfer).arg(verb));
+    emit transferCountMismatch();
+  }
+  else
+  {
+    emit statusUpdated(QString("Klart: %1 av %2 filer %3.")
+                           .arg(m_filesTransferred).arg(m_filesToTransfer).arg(verb));
+  }
+}
+
+void
 FtpCommunicator::processUploadQueue()
 {
   if (m_uploadQueue.isEmpty())
   {
     qDebug() << "Upload queue finished.";
+    emitCompletionStatus("uppladdades");
     emit uploadComplete();
     // Refresh remote file list
     m_lastCommand = FtpCommand::List;
@@ -1125,6 +1171,9 @@ FtpCommunicator::downloadFolder(const QString &remoteFolderName, const QString &
 {
   QString remotePath = joinPath(m_currentPath, remoteFolderName);
 
+  m_filesToTransfer = 0;
+  m_filesTransferred = 0;
+  m_downloadCountEmitted = false;
   m_downloadInProgress = true;
   m_downloadQueue.clear();
   m_remoteDirsToExploreForDownload.clear();
@@ -1139,6 +1188,9 @@ FtpCommunicator::downloadFolder(const QString &remoteFolderName, const QString &
 void
 FtpCommunicator::downloadItems(const QStringList &names, const QString &localDir)
 {
+  m_filesToTransfer = 0;
+  m_filesTransferred = 0;
+  m_downloadCountEmitted = false;
   m_downloadInProgress = true;
   m_downloadQueue.clear();
   m_remoteDirsToExploreForDownload.clear();
@@ -1157,7 +1209,14 @@ FtpCommunicator::downloadItems(const QStringList &names, const QString &localDir
     {
       QString localFilePath = QDir(localDir).filePath(name);
       m_downloadQueue.enqueue({ FtpDownloadCommand::DownloadFile, remotePath, localFilePath });
+      m_filesToTransfer++;
     }
+  }
+
+  if (m_remoteDirsToExploreForDownload.isEmpty())
+  {
+    m_downloadCountEmitted = true;
+    emit statusUpdated(QString("Antal filer att ladda ner: %1").arg(m_filesToTransfer));
   }
 
   processDownloadQueue();
@@ -1169,7 +1228,23 @@ FtpCommunicator::processDownloadQueue()
   if (!m_downloadInProgress)
     return;
 
-  // 1. Process files in the download queue
+  // 1. Explore all directories first so we know the full file count before downloading
+  if (!m_remoteDirsToExploreForDownload.isEmpty())
+  {
+    m_currentExploreDirForDownload = m_remoteDirsToExploreForDownload.pop();
+    m_lastCommand = FtpCommand::ListForDownload;
+    sendCommand("PASV");
+    return;
+  }
+
+  // 2. All directories explored — emit file count once before any transfer starts
+  if (!m_downloadCountEmitted)
+  {
+    m_downloadCountEmitted = true;
+    emit statusUpdated(QString("Antal filer att ladda ner: %1").arg(m_filesToTransfer));
+  }
+
+  // 3. Download files and create local directories
   if (!m_downloadQueue.isEmpty())
   {
     FtpDownloadCommand cmd = m_downloadQueue.dequeue();
@@ -1199,24 +1274,9 @@ FtpCommunicator::processDownloadQueue()
     }
   }
 
-  // 2. If no files to download, explore more directories
-  if (!m_remoteDirsToExploreForDownload.isEmpty())
-  {
-    m_currentExploreDirForDownload = m_remoteDirsToExploreForDownload.pop();
-
-    // Map remote path to local path
-    // We need to know where the "root" of this download is.
-    // Let's assume the first dir pushed is the base.
-    // Actually, we can just use relative paths if we know the base remote dir.
-    // But for simplicity, let's just use the current dir name.
-
-    m_lastCommand = FtpCommand::ListForDownload;
-    sendCommand("PASV");
-    return;
-  }
-
-  // 3. Finished!
+  // 4. Finished!
   m_downloadInProgress = false;
+  emitCompletionStatus("nedladdades");
   emit downloadComplete();
   m_lastCommand = FtpCommand::List;
   sendCommand("PASV");

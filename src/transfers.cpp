@@ -65,6 +65,12 @@ MainWindow::onFtpUploadComplete()
 }
 
 void
+MainWindow::onFtpTransferCountMismatch()
+{
+  QMessageBox::critical(this, m_s->dlgErrTitle, m_s->dlgTransferMismatchMsg);
+}
+
+void
 MainWindow::uploadFile(const QString &filePath)
 {
   if (!m_ftpCommunicator->isConnected())

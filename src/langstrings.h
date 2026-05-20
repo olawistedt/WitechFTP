@@ -73,6 +73,8 @@ struct LangStrings {
   // Dialogs – quit while copying
   const char *dlgQuitCopyingTitle;
   const char *dlgQuitCopyingMsg;
+  // Dialogs – transfer count mismatch
+  const char *dlgTransferMismatchMsg;
   // Log
   const char *logDeleted;
 };

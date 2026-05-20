@@ -62,6 +62,7 @@ static const LangStrings s_sv = {
   "Filen finns inte.",
   "Avsluta",
   "Kopiering av filer pågår. Vill du verkligen avsluta?",
+  "Fel antal filer kopierades.",
   "Tog bort %1: %2",
 };
 
@@ -127,6 +128,7 @@ static const LangStrings s_en = {
   "File does not exist.",
   "Quit",
   "File transfer in progress. Do you really want to quit?",
+  "Wrong number of files were copied.",
   "Deleted %1: %2",
 };
 
@@ -192,6 +194,7 @@ static const LangStrings s_es = {
   "El archivo no existe.",
   "Salir",
   "Transferencia de archivos en curso. ¿Realmente deseas salir?",
+  "Se copió un número incorrecto de archivos.",
   "Eliminado %1: %2",
 };
 
@@ -257,6 +260,7 @@ static const LangStrings s_ja = {
   "ファイルが存在しません。",
   "終了",
   "ファイルのコピーが進行中です。本当に終了しますか?",
+  "コピーされたファイルの数が正しくありません。",
   "%1を削除しました: %2",
 };
 
