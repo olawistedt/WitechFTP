@@ -60,6 +60,8 @@ static const LangStrings s_sv = {
   "Filen '%1' finns redan. Skriv över?",
   "Fel",
   "Filen finns inte.",
+  "Avsluta",
+  "Kopiering av filer pågår. Vill du verkligen avsluta?",
   "Tog bort %1: %2",
 };
 
@@ -123,6 +125,8 @@ static const LangStrings s_en = {
   "File '%1' already exists. Overwrite?",
   "Error",
   "File does not exist.",
+  "Quit",
+  "File transfer in progress. Do you really want to quit?",
   "Deleted %1: %2",
 };
 
@@ -186,6 +190,8 @@ static const LangStrings s_es = {
   "El archivo '%1' ya existe. ¿Sobrescribir?",
   "Error",
   "El archivo no existe.",
+  "Salir",
+  "Transferencia de archivos en curso. ¿Realmente deseas salir?",
   "Eliminado %1: %2",
 };
 
@@ -249,6 +255,8 @@ static const LangStrings s_ja = {
   "ファイル '%1' は既に存在します。上書きしますか?",
   "エラー",
   "ファイルが存在しません。",
+  "終了",
+  "ファイルのコピーが進行中です。本当に終了しますか?",
   "%1を削除しました: %2",
 };
 

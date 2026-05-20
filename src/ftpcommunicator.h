@@ -53,6 +53,7 @@ public:
 
   // Getters
   QString getCurrentPath() const { return m_currentPath; }
+  bool isTransferInProgress() const { return !m_uploadQueue.isEmpty() || m_downloadInProgress || !m_downloadQueue.isEmpty(); }
   bool isDirectory(const QString &name) const { return m_remoteFiles.contains(name) && m_remoteFiles.value(name).isDir; }
   QHash<QString, RemoteFileInfo> getRemoteFiles() const { return m_remoteFiles; }
 

@@ -70,6 +70,9 @@ struct LangStrings {
   // Dialogs – file not found on upload
   const char *dlgFileNotFoundTitle;
   const char *dlgFileNotFoundMsg;
+  // Dialogs – quit while copying
+  const char *dlgQuitCopyingTitle;
+  const char *dlgQuitCopyingMsg;
   // Log
   const char *logDeleted;
 };

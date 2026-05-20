@@ -3,6 +3,7 @@
 #include "langstrings.h"
 
 #include <QApplication>
+#include <QCloseEvent>
 #include <QDateTime>
 #include <QDir>
 #include <QEvent>
@@ -10,6 +11,7 @@
 #include <QGuiApplication>
 #include <QIcon>
 #include <QInputDialog>
+#include <QMessageBox>
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QProcessEnvironment>
@@ -170,6 +172,24 @@ MainWindow::remoteNameFromItem(QTreeWidgetItem *item)
   if (name.isEmpty())
     name = item->text(0);
   return (name == "..") ? QString() : name;
+}
+
+void
+MainWindow::closeEvent(QCloseEvent *event)
+{
+  if (m_ftpCommunicator->isTransferInProgress())
+  {
+    auto reply = QMessageBox::question(this,
+                                       m_s->dlgQuitCopyingTitle,
+                                       m_s->dlgQuitCopyingMsg,
+                                       QMessageBox::Yes | QMessageBox::No);
+    if (reply == QMessageBox::No)
+    {
+      event->ignore();
+      return;
+    }
+  }
+  QMainWindow::closeEvent(event);
 }
 
 QString
